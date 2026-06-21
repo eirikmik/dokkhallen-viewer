@@ -194,10 +194,11 @@ function setGround(on){
     cc.lookEventTypes = [Cesium.CameraEventType.LEFT_DRAG];
     cc.zoomEventTypes = [Cesium.CameraEventType.WHEEL, Cesium.CameraEventType.PINCH];
     cc.enableCollisionDetection = false;
-    tipEl.textContent = "Gateplan · dra = se deg rundt · dobbeltklikk = gå framover · ⌂ Oversikt = avslutt";
+    tipEl.textContent = "Gateplan · WASD = gå (Shift = løp) · dra = se deg rundt · dobbeltklikk = steg framover · ⌂ Oversikt = avslutt";
   } else {
     cc.rotateEventTypes = DEF.rot; cc.tiltEventTypes = DEF.tilt; cc.translateEventTypes = DEF.tr;
     cc.lookEventTypes = DEF.look; cc.zoomEventTypes = DEF.zoom; cc.enableCollisionDetection = true;
+    keys.clear();
     tipEl.textContent = "";
   }
 }
@@ -231,12 +232,37 @@ peg.addEventListener("pointerup",(e)=>{
 document.getElementById("bHome").onclick=()=>{ if(groundMode) setGround(false); homeView(); };
 
 let playing=false, last=0;
+// WASD / arrow-key walking while at ground level
+const keys=new Set();
+const WALK_CODES=["KeyW","KeyA","KeyS","KeyD","ArrowUp","ArrowDown","ArrowLeft","ArrowRight","ShiftLeft","ShiftRight"];
+addEventListener("keydown",(e)=>{ if(groundMode && WALK_CODES.includes(e.code)){ keys.add(e.code); e.preventDefault(); } });
+addEventListener("keyup",(e)=>{ keys.delete(e.code); });
+function flatten(v, up){ const o=Cesium.Cartesian3.clone(v,new Cesium.Cartesian3());
+  const d=Cesium.Cartesian3.dot(o,up); Cesium.Cartesian3.subtract(o,Cesium.Cartesian3.multiplyByScalar(up,d,new Cesium.Cartesian3()),o);
+  return Cesium.Cartesian3.normalize(o,o); }
+function groundStep(dt){
+  const fI=(keys.has("KeyW")||keys.has("ArrowUp")?1:0)-(keys.has("KeyS")||keys.has("ArrowDown")?1:0);
+  const rI=(keys.has("KeyD")||keys.has("ArrowRight")?1:0)-(keys.has("KeyA")||keys.has("ArrowLeft")?1:0);
+  if(!fI && !rI) return;
+  const cam=viewer.camera;
+  const up=Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(cam.positionWC,new Cesium.Cartesian3());
+  const move=new Cesium.Cartesian3();
+  Cesium.Cartesian3.add(Cesium.Cartesian3.multiplyByScalar(flatten(cam.directionWC,up),fI,new Cesium.Cartesian3()),
+                        Cesium.Cartesian3.multiplyByScalar(flatten(cam.rightWC,up),rI,new Cesium.Cartesian3()), move);
+  Cesium.Cartesian3.normalize(move,move);
+  const speed=(keys.has("ShiftLeft")||keys.has("ShiftRight")?28:11)*dt;
+  const ahead=Cesium.Cartesian3.add(cam.positionWC, Cesium.Cartesian3.multiplyByScalar(move,speed,new Cesium.Cartesian3()), new Cesium.Cartesian3());
+  const ground=scene.clampToHeight(ahead, proposal?[proposal]:[]);
+  const base=Cesium.defined(ground)?ground:ahead;
+  const up2=Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(base,new Cesium.Cartesian3());
+  const eye=Cesium.Cartesian3.add(base,Cesium.Cartesian3.multiplyByScalar(up2,EYE,new Cesium.Cartesian3()),new Cesium.Cartesian3());
+  cam.setView({destination:eye, orientation:{direction:cam.directionWC, up:up2}});
+}
 document.getElementById("bPlay").onclick=(e)=>{ playing=!playing; e.target.classList.toggle("on",playing); e.target.textContent=playing?"❚❚ Dag":"▶ Dag"; };
 viewer.clock.onTick.addEventListener(()=>{
-  if(!playing) return;
-  const now=performance.now(); if(!last) last=now; const dt=(now-last)/1000; last=now;
-  hourEl.value=(+hourEl.value + dt*90)%1440;   // 90 sim-min per real sec
-  updateSun();
+  const now=performance.now(); if(!last) last=now; const dt=Math.min(0.1,(now-last)/1000); last=now;
+  if(playing){ hourEl.value=(+hourEl.value + dt*90)%1440; updateSun(); }   // 90 sim-min per real sec
+  if(groundMode) groundStep(dt);
 });
 
 init().catch(err=>{ document.getElementById("load").textContent="Feil: "+err.message; console.error(err); });
