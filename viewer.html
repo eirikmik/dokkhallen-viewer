@@ -147,6 +147,31 @@ function groundY(x, z){
   return hit.length ? hit[0].point.y : 0;
 }
 
+// procedural facade: vertex colour (sampled from Google 3D Tiles) + window grid on walls
+function makeFacade(){
+  const m = new THREE.MeshStandardMaterial({ vertexColors:true, color:0xffffff, roughness:0.9, metalness:0.0 });
+  m.onBeforeCompile = (sh)=>{
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNrm;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n vWPos=(modelMatrix*vec4(transformed,1.0)).xyz; vWNrm=mat3(modelMatrix)*objectNormal;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNrm;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+      { vec3 n=normalize(vWNrm);
+        float vert=1.0-smoothstep(0.25,0.45,abs(n.y));   // 1 on walls, 0 on roofs
+        if(vert>0.01){
+          float floorH=3.3, winW=2.6;
+          float hc = abs(n.x)>abs(n.z) ? vWPos.z : vWPos.x;
+          float fy=fract(vWPos.y/floorH), fx=fract(hc/winW);
+          float win=step(0.12,fy)*step(fy,0.82)*step(0.18,fx)*step(fx,0.82);
+          vec3 glass=mix(diffuseColor.rgb*0.5, vec3(0.18,0.22,0.29), 0.5);
+          vec3 facade=mix(diffuseColor.rgb*0.9, glass, win);
+          diffuseColor.rgb=mix(diffuseColor.rgb, facade, vert);
+        } }`);
+  };
+  return m;
+}
+
 const draco = new DRACOLoader();
 draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/');
 const gltfLoader = new GLTFLoader();
@@ -155,16 +180,20 @@ gltfLoader.load('scene.glb', (g)=>{
   g.scene.traverse(o=>{
     if (o.isMesh){
       o.castShadow = true; o.receiveShadow = true;
-      if (o.name.toLowerCase().includes('terrain') || (o.material && o.material.map)) terrain = terrain||o;
+      if (o.material && o.material.map) terrain = o;
       if (o.material) o.material.roughness = 0.92;
     }
   });
-  // terrain = the mesh that has a texture map
-  g.scene.traverse(o=>{ if(o.isMesh && o.material && o.material.map) terrain=o; });
   scene.add(g.scene);
   document.getElementById('load').remove();
   updateSun();
 }, undefined, (e)=>{ document.getElementById('load').textContent = 'Failed to load scene.glb — run a local server (see README).'; });
+// colored city buildings (Google-sampled) with procedural windows
+gltfLoader.load('city_colored.glb', (g)=>{
+  const fm = makeFacade();
+  g.scene.traverse(o=>{ if(o.isMesh){ o.material = fm; o.castShadow = true; o.receiveShadow = true; } });
+  scene.add(g.scene);
+}, undefined, ()=>{});
 
 // ---- sun update from UI ----
 const dayEl=document.getElementById('day'), hourEl=document.getElementById('hour');
