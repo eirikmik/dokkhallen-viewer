@@ -172,7 +172,7 @@ function groundY(x, z){
 // live-tunable:  tuneWindows({glass:0.85, tint:0.25, spandrel:0.96, win:1, floor:3.3, winW:2.6, frame:0.55})
 const FACADE_U = {
   uGlass:{value:0.85}, uTint:{value:0.26}, uSpandrel:{value:0.96}, uWin:{value:1.0},
-  uFloor:{value:3.3}, uWinW:{value:2.6}, uFrame:{value:0.5}, uNight:{value:0.0}
+  uFloor:{value:3.3}, uWinW:{value:2.6}, uFrame:{value:0.5}, uLitFrac:{value:0.0}
 };
 function makeFacade(){
   const m = new THREE.MeshStandardMaterial({ vertexColors:true, color:0xffffff, roughness:0.9, metalness:0.0 });
@@ -182,9 +182,9 @@ function makeFacade(){
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNrm;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n vWPos=(modelMatrix*vec4(transformed,1.0)).xyz; vWNrm=mat3(modelMatrix)*objectNormal;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNrm;\nuniform float uGlass,uTint,uSpandrel,uWin,uFloor,uWinW,uFrame,uNight;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNrm;\nuniform float uGlass,uTint,uSpandrel,uWin,uFloor,uWinW,uFrame,uLitFrac;')
       .replace('#include <color_fragment>', `#include <color_fragment>
-      float gGlass=0.0, gLit=0.0;
+      float gGlass=0.0, gLit=0.0; vec3 gLitCol=vec3(0.0);
       { vec3 n=normalize(vWNrm);
         float vert=1.0-smoothstep(0.25,0.45,abs(n.y));   // 1 on walls, 0 on roofs
         if(vert>0.01){
@@ -207,19 +207,24 @@ function makeFacade(){
           vec3 facade = mix(mix(wall, frmC, frame), glass, win);
           diffuseColor.rgb = mix(diffuseColor.rgb, facade, vert);
           gGlass = win*vert;
-          gLit   = win*vert*uNight*step(0.45, r);        // ~half the windows lit at night
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0,0.82,0.5), gLit*0.6);
+          float r2 = fract(sin(dot(cell, vec2(39.34,11.13)))*24634.6);   // 2nd rng
+          float inten = 0.45 + 1.1*r2;                                   // per-window brightness
+          vec3 lcol = mix(vec3(1.0,0.74,0.42), vec3(1.0,0.92,0.78), r2); // warm .. warm-white
+          gLit = win*vert*step(r, uLitFrac);                            // lit if window rng < lit fraction
+          gLitCol = lcol*inten;
+          diffuseColor.rgb = mix(diffuseColor.rgb, lcol, gLit*0.5*inten);
         } }`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = mix(roughnessFactor, 0.08, gGlass);')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n metalnessFactor = mix(metalnessFactor, 0.45, gGlass);')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += vec3(1.0,0.82,0.5)*gLit*2.0;');
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += gLitCol*gLit*1.6;');
   };
   return m;
 }
 window.tuneWindows = (o={})=>{
   const map={glass:'uGlass',tint:'uTint',spandrel:'uSpandrel',win:'uWin',floor:'uFloor',winW:'uWinW',frame:'uFrame'};
   for(const k in o){ if(map[k]) FACADE_U[map[k]].value=o[k]; }
-  console.log('windows', Object.fromEntries(Object.entries(FACADE_U).map(([k,v])=>[k,v.value])));
+  if(o.lit!=null){ window._litScale=o.lit; updateSun(); }   // overall lit-window density
+  console.log('windows', Object.fromEntries(Object.entries(FACADE_U).map(([k,v])=>[k,v.value])), 'litScale', window._litScale ?? 1);
 };
 
 const draco = new DRACOLoader();
@@ -266,7 +271,9 @@ function updateSun(){
   sun.target.position.set(0,0,0);
   sunDisc.position.copy(dir.clone().multiplyScalar(8000));   // visible sun in the sky
   sunDisc.visible = el > -2;
-  FACADE_U.uNight.value = THREE.MathUtils.clamp((4-el)/12, 0, 1);   // lit windows after dark
+  const night = THREE.MathUtils.clamp((4-el)/12, 0, 1);            // 0 day .. 1 dark
+  const occ = (hod>=17 && hod<22) ? 0.26 : ((hod>=22 || hod<7) ? 0.07 : 0.03); // evening many, 22–07 few
+  FACADE_U.uLitFrac.value = occ * night * (window._litScale ?? 1);
   const warmS = THREE.MathUtils.clamp(1-(el/15), 0, 1);      // orange near horizon
   sunDisc.material.color.setRGB(1, 1-0.42*warmS, 1-0.72*warmS);
   const up = Math.max(0, Math.sin(e));
