@@ -158,12 +158,12 @@ const keys = {};
 addEventListener('keydown', e=>keys[e.code]=true);
 addEventListener('keyup',   e=>keys[e.code]=false);
 
-let terrain = null;
+const terrains = [];
 let proposal = null;
 const ray = new THREE.Raycaster();
 function groundY(x, z){
   ray.set(new THREE.Vector3(x, 2000, z), new THREE.Vector3(0,-1,0));
-  const hit = terrain ? ray.intersectObject(terrain, true) : [];
+  const hit = ray.intersectObjects(terrains, true);
   return hit.length ? hit[0].point.y : 0;
 }
 
@@ -202,7 +202,7 @@ gltfLoader.load('scene.glb', (g)=>{
       o.castShadow = true; o.receiveShadow = true;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       if (mats.some(m=>m && m.map)) {          // terrain (multi-material ortho)
-        terrain = o; mats.forEach(m=>{ if(m) m.roughness = 0.95; });
+        terrains.push(o); mats.forEach(m=>{ if(m) m.roughness = 0.95; });
       } else {                                  // the non-terrain mesh = the hall
         proposal = o; if(o.material) o.material.roughness = 0.92;
       }
@@ -261,7 +261,7 @@ renderer.domElement.addEventListener('pointerup', (ev)=>{
   if (Math.hypot(ev.clientX-d.x, ev.clientY-d.y) > 6) return;  // was a drag -> orbit keeps it
   const m = new THREE.Vector2((ev.clientX/innerWidth)*2-1, -(ev.clientY/innerHeight)*2+1);
   ray.setFromCamera(m, camera);
-  const hit = terrain ? ray.intersectObject(terrain, true) : [];
+  const hit = ray.intersectObjects(terrains, true);
   if (hit.length){ pendingStand = hit[0].point.clone(); setMode('walk'); }
 });
 
@@ -308,7 +308,7 @@ peg.addEventListener('pointerup',(e)=>{
   if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom) return;
   const m = new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1);
   ray.setFromCamera(m, camera);
-  const hit = terrain ? ray.intersectObject(terrain, true) : [];
+  const hit = ray.intersectObjects(terrains, true);
   if(hit.length){ pendingStand = hit[0].point.clone(); setMode('walk'); }
 });
 
