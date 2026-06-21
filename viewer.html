@@ -67,7 +67,7 @@
     <span style="color:var(--mut);font-size:11px">Drag the figure onto the map for street level</span>
   </div>
 </div>
-<div id="hint">Drag to look · scroll to zoom · drag the <b>🧍</b> (or click ground) to stand · Walk: <b>WASD</b></div>
+<div id="hint">Drag to look · scroll to zoom · drag the <b>🧍</b> to stand · Walk: <b>WASD</b> · <b>Esc</b> for panel, click viewport to resume</div>
 
 <script type="importmap">
 { "imports": {
@@ -259,7 +259,9 @@ function setMode(m){
 }
 bOrbit.onclick=()=>setMode('orbit');
 bWalk.onclick=()=>setMode('walk');
-walk.addEventListener('unlock', ()=>{ if(mode==='walk'){ /* stay until Orbit pressed */ } });
+walk.addEventListener('unlock', ()=>{ if(mode==='walk'){ /* stay in walk; click viewport to re-lock */ } });
+// Esc unlocks the pointer (to use the panel); clicking back on the viewport re-locks walk
+renderer.domElement.addEventListener('click', ()=>{ if(mode==='walk' && !walk.isLocked) walk.lock(); });
 
 // ---- proposed Dokkhallen on/off ----
 document.getElementById('toggle').onchange = (e)=>{ if(proposal) proposal.visible = e.target.checked; };
