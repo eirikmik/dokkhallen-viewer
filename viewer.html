@@ -168,29 +168,39 @@ function groundY(x, z){
 }
 
 // procedural facade: vertex colour (sampled from Google 3D Tiles) + window grid on walls
+// live-tunable from the console:  tuneWindows({glass:0.85, tint:0.2, spandrel:0.95, win:1, floor:3.3, winW:2.6})
+const FACADE_U = {
+  uGlass:{value:0.80}, uTint:{value:0.20}, uSpandrel:{value:0.95},
+  uWin:{value:1.0}, uFloor:{value:3.3}, uWinW:{value:2.6}
+};
 function makeFacade(){
-  const m = new THREE.MeshStandardMaterial({ vertexColors:true, color:0xffffff, roughness:0.9, metalness:0.0 });
+  const m = new THREE.MeshStandardMaterial({ vertexColors:true, color:0xffffff, roughness:0.85, metalness:0.0 });
   m.onBeforeCompile = (sh)=>{
+    Object.assign(sh.uniforms, FACADE_U);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNrm;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n vWPos=(modelMatrix*vec4(transformed,1.0)).xyz; vWNrm=mat3(modelMatrix)*objectNormal;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNrm;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNrm;\nuniform float uGlass,uTint,uSpandrel,uWin,uFloor,uWinW;')
       .replace('#include <color_fragment>', `#include <color_fragment>
       { vec3 n=normalize(vWNrm);
         float vert=1.0-smoothstep(0.25,0.45,abs(n.y));   // 1 on walls, 0 on roofs
         if(vert>0.01){
-          float floorH=3.3, winW=2.6;
           float hc = abs(n.x)>abs(n.z) ? vWPos.z : vWPos.x;
-          float fy=fract(vWPos.y/floorH), fx=fract(hc/winW);
-          float win=step(0.12,fy)*step(fy,0.82)*step(0.18,fx)*step(fx,0.82);
-          vec3 glass=mix(diffuseColor.rgb*0.5, vec3(0.18,0.22,0.29), 0.5);
-          vec3 facade=mix(diffuseColor.rgb*0.9, glass, win);
+          float fy=fract(vWPos.y/uFloor), fx=fract(hc/uWinW);
+          float win=step(0.12,fy)*step(fy,0.82)*step(0.18,fx)*step(fx,0.82)*uWin;
+          vec3 glass=mix(diffuseColor.rgb*uGlass, vec3(0.20,0.26,0.34), uTint);
+          vec3 facade=mix(diffuseColor.rgb*uSpandrel, glass, win);
           diffuseColor.rgb=mix(diffuseColor.rgb, facade, vert);
         } }`);
   };
   return m;
 }
+window.tuneWindows = (o={})=>{
+  const map={glass:'uGlass',tint:'uTint',spandrel:'uSpandrel',win:'uWin',floor:'uFloor',winW:'uWinW'};
+  for(const k in o){ if(map[k]) FACADE_U[map[k]].value=o[k]; }
+  console.log('windows', Object.fromEntries(Object.entries(FACADE_U).map(([k,v])=>[k,v.value])));
+};
 
 const draco = new DRACOLoader();
 draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/');
