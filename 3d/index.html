@@ -45,7 +45,7 @@
   <div class="btns"><button id="bPlay">▶ Day</button><button id="bHome">⌂ Site</button></div>
   <details>
     <summary>Align proposal (if it floats / is rotated)</summary>
-    <div class="row"><label>Heading <b id="hdgL">0°</b></label><input id="hdg" type="range" min="-180" max="180" step="0.5" value="0"/></div>
+    <div class="row"><label>Heading <b id="hdgL">90°</b></label><input id="hdg" type="range" min="-180" max="180" step="0.5" value="90"/></div>
     <div class="row"><label>Height <b id="hgtL">30 m</b></label><input id="hgt" type="range" min="-20" max="80" step="0.5" value="30"/></div>
   </details>
 </div>
@@ -82,6 +82,16 @@ scene.shadowMap.size = 2048;
 scene.shadowMap.softShadows = true;
 scene.light = new Cesium.SunLight();
 viewer.clock.shouldAnimate = false;
+
+// Google tiles are UNLIT (daylight baked into the textures), so the sun only
+// moves shadows — it can't darken them. Dim the whole image when the sun is low
+// so dusk / polar night read dark. (built-in stage, no custom GLSL)
+const dimStage = Cesium.PostProcessStageLibrary.createBrightnessStage();
+scene.postProcessStages.add(dimStage);
+function dayFactor(el){            // 1.0 daylight -> ~0.12 deep night, smooth twilight
+  const t = Math.min(1, Math.max(0, (el + 6) / 10));
+  return 0.12 + 0.88 * t;
+}
 
 const site = Cesium.Cartesian3.fromDegrees(LON, LAT, 60);
 function homeView(){
@@ -135,6 +145,7 @@ function updateSun(){
   // drive Cesium clock (UTC = CET - 1) -> Cesium positions the real sun + shadows
   const jsDate=new Date(Date.UTC(2025,mo-1,da,0,0,0)); jsDate.setUTCMinutes(Math.round((hod-UTC_OFFSET)*60));
   viewer.clock.currentTime = Cesium.JulianDate.fromDate(jsDate);
+  dimStage.uniforms.brightness = dayFactor(el);   // dusk/night dimming
   scene.requestRender();
 }
 dayEl.oninput=updateSun; hourEl.oninput=updateSun;
