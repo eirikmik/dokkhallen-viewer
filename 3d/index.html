@@ -36,7 +36,7 @@
   <h1>Dokkhallen Harstad — fotorealistisk</h1>
   <div class="sub">Google 3D Tiles · sol og skygger i sanntid</div>
   <div class="row"><label>Dato <b id="dLbl">21. jun</b></label><input id="day" type="range" min="0" max="364" value="171"/></div>
-  <div class="row"><label>Klokkeslett (CET) <b id="tLbl">13:00</b></label><input id="hour" type="range" min="0" max="1439" value="780"/></div>
+  <div class="row"><label>Klokkeslett (<span id="tz">CET</span>) <b id="tLbl">13:00</b></label><input id="hour" type="range" min="0" max="1439" value="780"/></div>
   <div class="readout">
     <div class="chip"><span>SOLHØYDE</span><b id="elv">–</b></div>
     <div class="chip"><span>ASIMUT</span><b id="azm">–</b></div>
@@ -52,10 +52,18 @@
 </div>
 <script>
 const WORKER = "https://g3d.brattkart.online";
-const LAT = 68.7970, LON = 16.5427, UTC_OFFSET = 1.0;
+const LAT = 68.7970, LON = 16.5427;
+// Norway tz incl. EU DST: CET (+1), CEST (+2) last Sun Mar .. last Sun Oct
+function euOffset(y, mo, da){
+  const lastSun = (m)=>{ const d=new Date(Date.UTC(y, m+1, 0)); return d.getUTCDate()-d.getUTCDay(); };
+  let dst;
+  if (mo<3 || mo>10) dst=false; else if (mo>3 && mo<10) dst=true;
+  else if (mo===3) dst = da>=lastSun(2); else dst = da<lastSun(9);
+  return dst ? 2 : 1;
+}
 
 // --- NOAA sun (for the on-screen elevation/azimuth readout) ---
-function sunAzEl(y,mo,d,h){ const r=Math.PI/180,g_=180/Math.PI,hU=h-UTC_OFFSET;
+function sunAzEl(y,mo,d,h){ const r=Math.PI/180,g_=180/Math.PI,hU=h-euOffset(y,mo,d);
   const a=Math.floor((14-mo)/12),Y=y+4800-a,M=mo+12*a-3;
   const jdn=d+Math.floor((153*M+2)/5)+365*Y+Math.floor(Y/4)-Math.floor(Y/100)+Math.floor(Y/400)-32045;
   const jd=jdn+(hU-12)/24,n=jd-2451545,gg=((357.529+0.98560028*n)%360)*r,L=((280.459+0.98564736*n)%360)*r;
@@ -141,11 +149,13 @@ function updateSun(){
   const [mo,da]=doyMD(+dayEl.value); const hod=(+hourEl.value)/60;
   document.getElementById("dLbl").textContent=da+". "+MON[mo-1];
   document.getElementById("tLbl").textContent=String(Math.floor(hod)).padStart(2,"0")+":"+String(Math.round(hod%1*60)).padStart(2,"0");
+  const off=euOffset(2025,mo,da);
+  document.getElementById("tz").textContent = off===2 ? "CEST" : "CET";
   const {az,el}=sunAzEl(2025,mo,da,hod);
   document.getElementById("elv").textContent=el.toFixed(0)+"°";
   document.getElementById("azm").textContent=az.toFixed(0)+"°";
-  // drive Cesium clock (UTC = CET - 1) -> Cesium positions the real sun + shadows
-  const jsDate=new Date(Date.UTC(2025,mo-1,da,0,0,0)); jsDate.setUTCMinutes(Math.round((hod-UTC_OFFSET)*60));
+  // drive Cesium clock (UTC = local - offset) -> Cesium positions the real sun + shadows
+  const jsDate=new Date(Date.UTC(2025,mo-1,da,0,0,0)); jsDate.setUTCMinutes(Math.round((hod-off)*60));
   viewer.clock.currentTime = Cesium.JulianDate.fromDate(jsDate);
   dimStage.uniforms.brightness = dayFactor(el);   // dusk/night dimming
   scene.requestRender();
