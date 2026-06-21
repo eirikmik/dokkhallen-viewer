@@ -172,8 +172,10 @@ function groundY(x, z){
 // live-tunable:  tuneWindows({glass:0.85, tint:0.25, spandrel:0.96, win:1, floor:3.3, winW:2.6, frame:0.55})
 const FACADE_U = {
   uGlass:{value:0.85}, uTint:{value:0.26}, uSpandrel:{value:0.96}, uWin:{value:1.0},
-  uFloor:{value:3.3}, uWinW:{value:2.6}, uFrame:{value:0.5}, uLitFrac:{value:0.0}
+  uFloor:{value:3.3}, uWinW:{value:2.6}, uFrame:{value:0.5}, uLitFrac:{value:0.0}, uFacade:{value:1.0}
 };
+// master on/off for the whole window effect:  windows(false) / windows(true)
+window.windows = (on=true)=>{ FACADE_U.uFacade.value = on?1:0; console.log('windows', on?'ON':'OFF'); };
 function makeFacade(){
   const m = new THREE.MeshStandardMaterial({ vertexColors:true, color:0xffffff, roughness:0.9, metalness:0.0 });
   m.onBeforeCompile = (sh)=>{
@@ -182,7 +184,7 @@ function makeFacade(){
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNrm;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n vWPos=(modelMatrix*vec4(transformed,1.0)).xyz; vWNrm=mat3(modelMatrix)*objectNormal;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNrm;\nuniform float uGlass,uTint,uSpandrel,uWin,uFloor,uWinW,uFrame,uLitFrac;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNrm;\nuniform float uGlass,uTint,uSpandrel,uWin,uFloor,uWinW,uFrame,uLitFrac,uFacade;')
       .replace('#include <color_fragment>', `#include <color_fragment>
       float gGlass=0.0, gLit=0.0; vec3 gLitCol=vec3(0.0);
       { vec3 n=normalize(vWNrm);
@@ -205,12 +207,13 @@ function makeFacade(){
           vec3 wall  = diffuseColor.rgb*uSpandrel;
           vec3 frmC  = diffuseColor.rgb*uFrame;
           vec3 facade = mix(mix(wall, frmC, frame), glass, win);
-          diffuseColor.rgb = mix(diffuseColor.rgb, facade, vert);
-          gGlass = win*vert;
+          float fac = vert*uFacade;                       // master window on/off
+          diffuseColor.rgb = mix(diffuseColor.rgb, facade, fac);
+          gGlass = win*fac;
           float r2 = fract(sin(dot(cell, vec2(39.34,11.13)))*24634.6);   // 2nd rng
           float inten = 0.45 + 1.1*r2;                                   // per-window brightness
           vec3 lcol = mix(vec3(1.0,0.74,0.42), vec3(1.0,0.92,0.78), r2); // warm .. warm-white
-          gLit = win*vert*step(r, uLitFrac);                            // lit if window rng < lit fraction
+          gLit = win*fac*step(r, uLitFrac);                            // lit if window rng < lit fraction
           gLitCol = lcol*inten;
           diffuseColor.rgb = mix(diffuseColor.rgb, lcol, gLit*0.5*inten);
         } }`)
@@ -288,21 +291,8 @@ function updateSun(){
 }
 dayEl.oninput = updateSun; hourEl.oninput = updateSun;
 
-// ---- clean click (not drag) on the ground to stand there ----
+// stand point is set only by dropping the Pegman (click-to-walk disabled)
 let pendingStand = null;
-let downPt = null;
-renderer.domElement.addEventListener('pointerdown', (ev)=>{
-  if (ev.button===0) downPt = { x:ev.clientX, y:ev.clientY };
-});
-renderer.domElement.addEventListener('pointerup', (ev)=>{
-  const d = downPt; downPt = null;
-  if (mode!=='orbit' || ev.button!==0 || !d) return;
-  if (Math.hypot(ev.clientX-d.x, ev.clientY-d.y) > 6) return;  // was a drag -> orbit keeps it
-  const m = new THREE.Vector2((ev.clientX/innerWidth)*2-1, -(ev.clientY/innerHeight)*2+1);
-  ray.setFromCamera(m, camera);
-  const hit = ray.intersectObjects(terrains, true);
-  if (hit.length){ pendingStand = hit[0].point.clone(); setMode('walk'); }
-});
 
 // ---- mode switching ----
 const bOrbit=document.getElementById('bOrbit'), bWalk=document.getElementById('bWalk');
