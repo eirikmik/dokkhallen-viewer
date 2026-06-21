@@ -145,6 +145,7 @@ sun.shadow.mapSize.set(4096, 4096);
 const S = 750;
 Object.assign(sun.shadow.camera, { left:-S, right:S, top:S, bottom:-S, near:1, far:4000 });
 sun.shadow.bias = -0.0004;
+sun.shadow.radius = 3;     // default soft; tightened when 'Harde skygger' is on
 scene.add(sun); scene.add(sun.target);
 
 // visible sun disc (glow sprite) placed in the real sun direction
@@ -296,8 +297,8 @@ function updateSun(){
   // brightness tracks whether the sun is UP (full daylight even at low midnight-sun
   // angles), only dimming through twilight as it drops below the horizon.
   const day = THREE.MathUtils.clamp((el+6)/8, 0, 1);   // 0 at el<=-6, 1 at el>=2
-  sun.intensity = el>0 ? (1.7 + 1.5*up) : 0.0;          // strong whenever the sun is up
-  hemi.intensity = (0.12 + 1.05*day) * (window._hardShadows ? 0.32 : 1.0);   // cut ambient -> darker shadows
+  sun.intensity = (el>0 ? (1.7 + 1.5*up) : 0.0) * (window._hardShadows ? 1.25 : 1.0);  // strong when sun up
+  hemi.intensity = (0.12 + 1.05*day) * (window._hardShadows ? 0.16 : 1.0);   // cut ambient -> darker shadows
   sky.setRGB(0.05+0.45*day, 0.08+0.55*day, 0.13+0.66*day).convertSRGBToLinear();
   const warm = THREE.MathUtils.clamp(1-(el/10), 0, 1);  // redden near horizon
   sun.color.setRGB(1, 1-0.32*warm, 1-0.6*warm);
@@ -339,7 +340,14 @@ renderer.domElement.addEventListener('click', ()=>{ if(mode==='walk' && !walk.is
 
 // ---- proposed Dokkhallen on/off ----
 document.getElementById('toggle').onchange = (e)=>{ if(proposal) proposal.visible = e.target.checked; };
-document.getElementById('hard').onchange = (e)=>{ window._hardShadows = e.target.checked; updateSun(); };
+document.getElementById('hard').onchange = (e)=>{
+  window._hardShadows = e.target.checked;
+  const S = window._hardShadows ? 450 : 750;     // tighter frustum = sharper shadows
+  Object.assign(sun.shadow.camera, {left:-S, right:S, top:S, bottom:-S});
+  sun.shadow.camera.updateProjectionMatrix();
+  sun.shadow.radius = window._hardShadows ? 1 : 3;
+  updateSun();
+};
 
 // ---- Pegman: drag the figure onto the map to stand at 1.5 m ----
 const peg = document.getElementById('pegman');
