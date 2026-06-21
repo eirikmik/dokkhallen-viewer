@@ -57,6 +57,8 @@
   </div>
   <label style="display:flex;align-items:center;gap:8px;margin:10px 0 2px;cursor:pointer;color:var(--txt);font-size:12px">
     <input id="toggle" type="checkbox" checked style="accent-color:var(--acc);width:15px;height:15px"/> Vis foreslått dokkhall</label>
+  <label style="display:flex;align-items:center;gap:8px;margin:4px 0 2px;cursor:pointer;color:var(--txt);font-size:12px">
+    <input id="hard" type="checkbox" style="accent-color:var(--acc);width:15px;height:15px"/> Harde skygger</label>
   <div class="btns">
     <button id="bOrbit" class="on">Oversikt</button>
     <button id="bWalk">Gå (1,5 m)</button>
@@ -295,7 +297,7 @@ function updateSun(){
   // angles), only dimming through twilight as it drops below the horizon.
   const day = THREE.MathUtils.clamp((el+6)/8, 0, 1);   // 0 at el<=-6, 1 at el>=2
   sun.intensity = el>0 ? (1.7 + 1.5*up) : 0.0;          // strong whenever the sun is up
-  hemi.intensity = 0.12 + 1.05*day;
+  hemi.intensity = (0.12 + 1.05*day) * (window._hardShadows ? 0.32 : 1.0);   // cut ambient -> darker shadows
   sky.setRGB(0.05+0.45*day, 0.08+0.55*day, 0.13+0.66*day).convertSRGBToLinear();
   const warm = THREE.MathUtils.clamp(1-(el/10), 0, 1);  // redden near horizon
   sun.color.setRGB(1, 1-0.32*warm, 1-0.6*warm);
@@ -337,6 +339,7 @@ renderer.domElement.addEventListener('click', ()=>{ if(mode==='walk' && !walk.is
 
 // ---- proposed Dokkhallen on/off ----
 document.getElementById('toggle').onchange = (e)=>{ if(proposal) proposal.visible = e.target.checked; };
+document.getElementById('hard').onchange = (e)=>{ window._hardShadows = e.target.checked; updateSun(); };
 
 // ---- Pegman: drag the figure onto the map to stand at 1.5 m ----
 const peg = document.getElementById('pegman');
