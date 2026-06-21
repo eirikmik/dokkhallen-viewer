@@ -277,13 +277,14 @@ function updateSun(){
   const warmS = THREE.MathUtils.clamp(1-(el/15), 0, 1);      // orange near horizon
   sunDisc.material.color.setRGB(1, 1-0.42*warmS, 1-0.72*warmS);
   const up = Math.max(0, Math.sin(e));
-  sun.intensity = el>0 ? 3.2*Math.max(0.15,up) : 0.0;
-  // sky + ambient by sun elevation
-  const t = THREE.MathUtils.clamp((el+6)/40, 0, 1);
-  sky.setRGB(0.03+0.12*t, 0.05+0.22*t, 0.09+0.40*t).convertSRGBToLinear();
-  hemi.intensity = 0.15 + 0.6*t;
-  const warm = THREE.MathUtils.clamp(1-(el/12), 0, 1); // redden near horizon
-  sun.color.setRGB(1, 1-0.35*warm, 1-0.65*warm);
+  // brightness tracks whether the sun is UP (full daylight even at low midnight-sun
+  // angles), only dimming through twilight as it drops below the horizon.
+  const day = THREE.MathUtils.clamp((el+6)/8, 0, 1);   // 0 at el<=-6, 1 at el>=2
+  sun.intensity = el>0 ? (1.7 + 1.5*up) : 0.0;          // strong whenever the sun is up
+  hemi.intensity = 0.12 + 1.05*day;
+  sky.setRGB(0.05+0.45*day, 0.08+0.55*day, 0.13+0.66*day).convertSRGBToLinear();
+  const warm = THREE.MathUtils.clamp(1-(el/10), 0, 1);  // redden near horizon
+  sun.color.setRGB(1, 1-0.32*warm, 1-0.6*warm);
 }
 dayEl.oninput = updateSun; hourEl.oninput = updateSun;
 
