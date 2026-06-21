@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Dokkhallen Harstad — photoreal 3D (Google) sun study</title>
+<script>window.CESIUM_BASE_URL = "https://unpkg.com/cesium/Build/Cesium/";</script>
+<script src="https://unpkg.com/cesium/Build/Cesium/Cesium.js"></script>
+<link href="https://unpkg.com/cesium/Build/Cesium/Widgets/widgets.css" rel="stylesheet"/>
+<style>
+  :root{ --panel:#171c24cc; --line:#2a323d; --txt:#e7ecf2; --mut:#8b97a6; --acc:#4ea3ff; }
+  html,body,#cesiumContainer{ margin:0; width:100%; height:100%; overflow:hidden;
+    font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#0e1116; }
+  #ui{ position:fixed; top:12px; left:12px; width:290px; background:var(--panel); color:var(--txt);
+    border:1px solid var(--line); border-radius:10px; padding:14px; backdrop-filter:blur(8px); z-index:10; }
+  #ui h1{ font-size:13px; margin:0 0 2px; } #ui .sub{ color:var(--mut); font-size:11px; margin-bottom:10px; }
+  .row{ margin:9px 0; } .row label{ display:flex; justify-content:space-between; color:var(--mut); font-size:11px; margin-bottom:3px; }
+  .row label b{ color:var(--txt); font-variant-numeric:tabular-nums; }
+  input[type=range]{ width:100%; accent-color:var(--acc); }
+  .readout{ display:flex; gap:8px; margin-top:6px; }
+  .chip{ flex:1; background:#0f141b88; border:1px solid var(--line); border-radius:7px; padding:6px; text-align:center; }
+  .chip span{ display:block; color:var(--mut); font-size:10px; } .chip b{ font-size:14px; font-variant-numeric:tabular-nums; }
+  .btns{ display:flex; gap:6px; margin-top:10px; }
+  button{ flex:1; background:#222b36; color:var(--txt); border:1px solid var(--line); border-radius:7px; padding:8px; cursor:pointer; }
+  button.on{ background:var(--acc); color:#03121f; font-weight:600; }
+  .chk{ display:flex; align-items:center; gap:8px; margin:10px 0 2px; cursor:pointer; }
+  .chk input{ accent-color:var(--acc); width:16px; height:16px; }
+  details{ margin-top:8px; } summary{ color:var(--mut); cursor:pointer; font-size:11px; }
+  #load{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; color:#8b97a6; background:#0e1116; z-index:20; }
+</style>
+</head>
+<body>
+<div id="cesiumContainer"></div>
+<div id="load">Loading Harstad (Google 3D Tiles)…</div>
+<div id="ui">
+  <h1>Dokkhallen Harstad — photoreal</h1>
+  <div class="sub">Google 3D Tiles · live sun &amp; shadows</div>
+  <div class="row"><label>Date <b id="dLbl">Jun 21</b></label><input id="day" type="range" min="0" max="364" value="171"/></div>
+  <div class="row"><label>Time (CET) <b id="tLbl">13:00</b></label><input id="hour" type="range" min="0" max="1439" value="780"/></div>
+  <div class="readout">
+    <div class="chip"><span>SUN ELEV</span><b id="elv">–</b></div>
+    <div class="chip"><span>AZIMUTH</span><b id="azm">–</b></div>
+  </div>
+  <label class="chk"><input id="toggle" type="checkbox" checked/> Show proposed Dokkhallen</label>
+  <div class="btns"><button id="bPlay">▶ Day</button><button id="bHome">⌂ Site</button></div>
+  <details>
+    <summary>Align proposal (if it floats / is rotated)</summary>
+    <div class="row"><label>Heading <b id="hdgL">0°</b></label><input id="hdg" type="range" min="-180" max="180" step="0.5" value="0"/></div>
+    <div class="row"><label>Height <b id="hgtL">30 m</b></label><input id="hgt" type="range" min="-20" max="80" step="0.5" value="30"/></div>
+  </details>
+</div>
+<script>
+const WORKER = "https://g3d.brattkart.online";
+const LAT = 68.7970, LON = 16.5427, UTC_OFFSET = 1.0;
+
+// --- NOAA sun (for the on-screen elevation/azimuth readout) ---
+function sunAzEl(y,mo,d,h){ const r=Math.PI/180,g_=180/Math.PI,hU=h-UTC_OFFSET;
+  const a=Math.floor((14-mo)/12),Y=y+4800-a,M=mo+12*a-3;
+  const jdn=d+Math.floor((153*M+2)/5)+365*Y+Math.floor(Y/4)-Math.floor(Y/100)+Math.floor(Y/400)-32045;
+  const jd=jdn+(hU-12)/24,n=jd-2451545,gg=((357.529+0.98560028*n)%360)*r,L=((280.459+0.98564736*n)%360)*r;
+  const lam=L+(1.915*Math.sin(gg)+0.020*Math.sin(2*gg))*r,ep=(23.439-3.6e-7*n)*r,dec=Math.asin(Math.sin(ep)*Math.sin(lam));
+  const yy=Math.tan(ep/2)**2,eot=4*g_*(yy*Math.sin(2*L)-2*0.0167*Math.sin(gg)+4*0.0167*yy*Math.sin(gg)*Math.cos(2*L)-0.5*yy*yy*Math.sin(4*L)-1.25*2.79e-4*Math.sin(2*gg));
+  const tst=((hU*60+eot+4*LON)%1440+1440)%1440,ha=(tst/4-180)*r,la=LAT*r;
+  const el=90-Math.acos(Math.sin(la)*Math.sin(dec)+Math.cos(la)*Math.cos(dec)*Math.cos(ha))*g_;
+  let az=Math.atan2(Math.sin(ha),Math.cos(ha)*Math.sin(la)-Math.tan(dec)*Math.cos(la))*g_+180; az=(az%360+360)%360;
+  return {az,el}; }
+const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function doyMD(doy){ const dt=new Date(Date.UTC(2025,0,1+doy)); return [dt.getUTCMonth()+1, dt.getUTCDate()]; }
+
+Cesium.Ion.defaultAccessToken = undefined;   // no ion assets used
+const viewer = new Cesium.Viewer("cesiumContainer", {
+  baseLayer:false, baseLayerPicker:false, geocoder:false, homeButton:false,
+  sceneModePicker:false, navigationHelpButton:false, animation:false, timeline:false,
+  fullscreenButton:false, infoBox:false, selectionIndicator:false, shadows:true,
+  terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+  contextOptions:{ webgl:{ powerPreference:"high-performance" } },
+});
+const scene = viewer.scene;
+scene.globe.show = false;                 // show only the Google mesh
+scene.skyAtmosphere.show = true;
+scene.shadowMap.size = 2048;
+scene.shadowMap.softShadows = true;
+scene.light = new Cesium.SunLight();
+viewer.clock.shouldAnimate = false;
+
+const site = Cesium.Cartesian3.fromDegrees(LON, LAT, 60);
+function homeView(){
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(LON+0.010, LAT-0.018, 1100),
+    orientation:{ heading:Cesium.Math.toRadians(330), pitch:Cesium.Math.toRadians(-30), roll:0 },
+    duration: 1.2,
+  });
+}
+
+let proposal = null;
+async function init(){
+  // Google Photorealistic 3D Tiles via the Cloudflare worker (key hidden)
+  const tileset = await Cesium.Cesium3DTileset.fromUrl(`${WORKER}/v1/3dtiles/root.json`, {
+    showCreditsOnScreen:true, maximumScreenSpaceError:12,
+  });
+  tileset.shadows = Cesium.ShadowMode.ENABLED;
+  scene.primitives.add(tileset);
+
+  // proposed Dokkhallen overlay (local ENU frame at the site)
+  updateProposalMatrix();
+  proposal = await Cesium.Model.fromGltfAsync({
+    url:"proposal.glb", modelMatrix: proposalMatrix(),
+    shadows:Cesium.ShadowMode.ENABLED,
+  });
+  scene.primitives.add(proposal);
+
+  document.getElementById("load").remove();
+  homeView();
+  updateSun();
+}
+function proposalMatrix(){
+  const hgt = parseFloat(hgtEl.value), hdg = parseFloat(hdgEl.value);
+  const origin = Cesium.Cartesian3.fromDegrees(LON, LAT, hgt);
+  const hpr = new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(hdg), 0, 0);
+  return Cesium.Transforms.headingPitchRollToFixedFrame(origin, hpr);
+}
+let proposalMatrixCache;
+function updateProposalMatrix(){ proposalMatrixCache = proposalMatrix(); if(proposal) proposal.modelMatrix = proposalMatrixCache; }
+
+// --- UI ---
+const dayEl=document.getElementById("day"), hourEl=document.getElementById("hour");
+const hdgEl=document.getElementById("hdg"), hgtEl=document.getElementById("hgt");
+function updateSun(){
+  const [mo,da]=doyMD(+dayEl.value); const hod=(+hourEl.value)/60;
+  document.getElementById("dLbl").textContent=MON[mo-1]+" "+da;
+  document.getElementById("tLbl").textContent=String(Math.floor(hod)).padStart(2,"0")+":"+String(Math.round(hod%1*60)).padStart(2,"0");
+  const {az,el}=sunAzEl(2025,mo,da,hod);
+  document.getElementById("elv").textContent=el.toFixed(0)+"°";
+  document.getElementById("azm").textContent=az.toFixed(0)+"°";
+  // drive Cesium clock (UTC = CET - 1) -> Cesium positions the real sun + shadows
+  const jsDate=new Date(Date.UTC(2025,mo-1,da,0,0,0)); jsDate.setUTCMinutes(Math.round((hod-UTC_OFFSET)*60));
+  viewer.clock.currentTime = Cesium.JulianDate.fromDate(jsDate);
+  scene.requestRender();
+}
+dayEl.oninput=updateSun; hourEl.oninput=updateSun;
+hdgEl.oninput=()=>{ document.getElementById("hdgL").textContent=hdgEl.value+"°"; updateProposalMatrix(); scene.requestRender(); };
+hgtEl.oninput=()=>{ document.getElementById("hgtL").textContent=Math.round(hgtEl.value)+" m"; updateProposalMatrix(); scene.requestRender(); };
+document.getElementById("toggle").onchange=(e)=>{ if(proposal) proposal.show=e.target.checked; scene.requestRender(); };
+document.getElementById("bHome").onclick=homeView;
+
+let playing=false, last=0;
+document.getElementById("bPlay").onclick=(e)=>{ playing=!playing; e.target.classList.toggle("on",playing); e.target.textContent=playing?"❚❚ Day":"▶ Day"; };
+viewer.clock.onTick.addEventListener(()=>{
+  if(!playing) return;
+  const now=performance.now(); if(!last) last=now; const dt=(now-last)/1000; last=now;
+  hourEl.value=(+hourEl.value + dt*90)%1440;   // 90 sim-min per real sec
+  updateSun();
+});
+
+init().catch(err=>{ document.getElementById("load").textContent="Error: "+err.message; console.error(err); });
+</script>
+</body>
+</html>
