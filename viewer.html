@@ -55,13 +55,19 @@
     <div class="chip"><span>SUN ELEV</span><b id="elv">–</b></div>
     <div class="chip"><span>AZIMUTH</span><b id="azm">–</b></div>
   </div>
+  <label style="display:flex;align-items:center;gap:8px;margin:10px 0 2px;cursor:pointer;color:var(--txt);font-size:12px">
+    <input id="toggle" type="checkbox" checked style="accent-color:var(--acc);width:15px;height:15px"/> Show proposed Dokkhallen</label>
   <div class="btns">
     <button id="bOrbit" class="on">Orbit</button>
     <button id="bWalk">Walk (1.5 m)</button>
     <button id="bPlay">▶ Day</button>
   </div>
+  <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+    <div id="pegman" title="Drag onto the map to stand there (1.5 m)" style="font-size:26px;cursor:grab;user-select:none;touch-action:none">🧍</div>
+    <span style="color:var(--mut);font-size:11px">Drag the figure onto the map for street level</span>
+  </div>
 </div>
-<div id="hint">Drag to look · scroll to zoom · <b>click ground</b> to stand there · Walk: <b>WASD</b> + mouse</div>
+<div id="hint">Drag to look · scroll to zoom · drag the <b>🧍</b> (or click ground) to stand · Walk: <b>WASD</b></div>
 
 <script type="importmap">
 { "imports": {
@@ -140,6 +146,7 @@ addEventListener('keydown', e=>keys[e.code]=true);
 addEventListener('keyup',   e=>keys[e.code]=false);
 
 let terrain = null;
+let proposal = null;
 const ray = new THREE.Raycaster();
 function groundY(x, z){
   ray.set(new THREE.Vector3(x, 2000, z), new THREE.Vector3(0,-1,0));
@@ -181,6 +188,7 @@ gltfLoader.load('scene.glb', (g)=>{
     if (o.isMesh){
       o.castShadow = true; o.receiveShadow = true;
       if (o.material && o.material.map) terrain = o;
+      else proposal = o;                       // the non-terrain mesh = the hall
       if (o.material) o.material.roughness = 0.92;
     }
   });
@@ -252,6 +260,29 @@ function setMode(m){
 bOrbit.onclick=()=>setMode('orbit');
 bWalk.onclick=()=>setMode('walk');
 walk.addEventListener('unlock', ()=>{ if(mode==='walk'){ /* stay until Orbit pressed */ } });
+
+// ---- proposed Dokkhallen on/off ----
+document.getElementById('toggle').onchange = (e)=>{ if(proposal) proposal.visible = e.target.checked; };
+
+// ---- Pegman: drag the figure onto the map to stand at 1.5 m ----
+const peg = document.getElementById('pegman');
+let pghost = null;
+peg.addEventListener('pointerdown',(e)=>{
+  e.preventDefault(); peg.setPointerCapture(e.pointerId);
+  pghost = document.createElement('div'); pghost.textContent='🧍';
+  pghost.style.cssText='position:fixed;font-size:36px;pointer-events:none;z-index:50;transform:translate(-50%,-92%);filter:drop-shadow(0 2px 3px #000a)';
+  document.body.appendChild(pghost); pghost.style.left=e.clientX+'px'; pghost.style.top=e.clientY+'px';
+});
+peg.addEventListener('pointermove',(e)=>{ if(pghost){ pghost.style.left=e.clientX+'px'; pghost.style.top=e.clientY+'px'; }});
+peg.addEventListener('pointerup',(e)=>{
+  if(!pghost) return; pghost.remove(); pghost=null;
+  const r = renderer.domElement.getBoundingClientRect();
+  if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom) return;
+  const m = new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1);
+  ray.setFromCamera(m, camera);
+  const hit = terrain ? ray.intersectObject(terrain, true) : [];
+  if(hit.length){ pendingStand = hit[0].point.clone(); setMode('walk'); }
+});
 
 // ---- play day ----
 let playing=false;
