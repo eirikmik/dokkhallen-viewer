@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Dokkhallen Harstad — photoreal 3D (Google) sun study</title>
+<title>Dokkhallen Harstad — fotorealistisk 3D solstudie</title>
 <script>window.CESIUM_BASE_URL = "https://unpkg.com/cesium/Build/Cesium/";</script>
 <script src="https://unpkg.com/cesium/Build/Cesium/Cesium.js"></script>
 <link href="https://unpkg.com/cesium/Build/Cesium/Widgets/widgets.css" rel="stylesheet"/>
@@ -31,29 +31,24 @@
 </head>
 <body>
 <div id="cesiumContainer"></div>
-<div id="load">Loading Harstad (Google 3D Tiles)…</div>
+<div id="load">Laster Harstad (Google 3D Tiles)…</div>
 <div id="ui">
-  <h1>Dokkhallen Harstad — photoreal</h1>
-  <div class="sub">Google 3D Tiles · live sun &amp; shadows</div>
-  <div class="row"><label>Date <b id="dLbl">Jun 21</b></label><input id="day" type="range" min="0" max="364" value="171"/></div>
-  <div class="row"><label>Time (CET) <b id="tLbl">13:00</b></label><input id="hour" type="range" min="0" max="1439" value="780"/></div>
+  <h1>Dokkhallen Harstad — fotorealistisk</h1>
+  <div class="sub">Google 3D Tiles · sol og skygger i sanntid</div>
+  <div class="row"><label>Dato <b id="dLbl">21. jun</b></label><input id="day" type="range" min="0" max="364" value="171"/></div>
+  <div class="row"><label>Klokkeslett (CET) <b id="tLbl">13:00</b></label><input id="hour" type="range" min="0" max="1439" value="780"/></div>
   <div class="readout">
-    <div class="chip"><span>SUN ELEV</span><b id="elv">–</b></div>
-    <div class="chip"><span>AZIMUTH</span><b id="azm">–</b></div>
+    <div class="chip"><span>SOLHØYDE</span><b id="elv">–</b></div>
+    <div class="chip"><span>ASIMUT</span><b id="azm">–</b></div>
   </div>
-  <label class="chk"><input id="toggle" type="checkbox" checked/> Show proposed Dokkhallen</label>
-  <div class="btns"><button id="bPlay">▶ Day</button><button id="bHome">⌂ Site</button></div>
+  <label class="chk"><input id="toggle" type="checkbox" checked/> Vis foreslått dokkhall</label>
+  <div class="btns"><button id="bPlay">▶ Dag</button><button id="bHome">⌂ Oversikt</button></div>
   <div class="row" style="display:flex;align-items:center;gap:10px;margin-top:10px">
-    <div id="pegman" title="Drag me onto the map to stand there (eye 1.7 m)"
+    <div id="pegman" title="Dra meg ut på kartet for å stå der (øyehøyde 1,7 m)"
          style="font-size:28px;cursor:grab;user-select:none;line-height:1;touch-action:none">🧍</div>
-    <span style="color:var(--mut);font-size:11px">Drag the figure onto the map for a street-level view</span>
+    <span style="color:var(--mut);font-size:11px">Dra figuren ut på kartet for gateplan-visning</span>
   </div>
   <div class="sub" id="tip" style="margin-top:8px"></div>
-  <details>
-    <summary>Align proposal (if it floats / is rotated)</summary>
-    <div class="row"><label>Heading <b id="hdgL">90°</b></label><input id="hdg" type="range" min="-180" max="180" step="0.5" value="90"/></div>
-    <div class="row"><label>Height <b id="hgtL">30 m</b></label><input id="hgt" type="range" min="-20" max="80" step="0.5" value="30"/></div>
-  </details>
 </div>
 <script>
 const WORKER = "https://g3d.brattkart.online";
@@ -70,7 +65,7 @@ function sunAzEl(y,mo,d,h){ const r=Math.PI/180,g_=180/Math.PI,hU=h-UTC_OFFSET;
   const el=90-Math.acos(Math.sin(la)*Math.sin(dec)+Math.cos(la)*Math.cos(dec)*Math.cos(ha))*g_;
   let az=Math.atan2(Math.sin(ha),Math.cos(ha)*Math.sin(la)-Math.tan(dec)*Math.cos(la))*g_+180; az=(az%360+360)%360;
   return {az,el}; }
-const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const MON=["jan","feb","mar","apr","mai","jun","jul","aug","sep","okt","nov","des"];
 function doyMD(doy){ const dt=new Date(Date.UTC(2025,0,1+doy)); return [dt.getUTCMonth()+1, dt.getUTCDate()]; }
 
 Cesium.Ion.defaultAccessToken = undefined;   // no ion assets used
@@ -133,9 +128,8 @@ async function init(){
   updateSun();
 }
 function proposalMatrix(){
-  const hgt = parseFloat(hgtEl.value), hdg = parseFloat(hdgEl.value);
-  const origin = Cesium.Cartesian3.fromDegrees(LON, LAT, hgt);
-  const hpr = new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(hdg), 0, 0);
+  const origin = Cesium.Cartesian3.fromDegrees(LON, LAT, 30);   // baked-in placement
+  const hpr = new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(90), 0, 0);
   return Cesium.Transforms.headingPitchRollToFixedFrame(origin, hpr);
 }
 let proposalMatrixCache;
@@ -143,10 +137,9 @@ function updateProposalMatrix(){ proposalMatrixCache = proposalMatrix(); if(prop
 
 // --- UI ---
 const dayEl=document.getElementById("day"), hourEl=document.getElementById("hour");
-const hdgEl=document.getElementById("hdg"), hgtEl=document.getElementById("hgt");
 function updateSun(){
   const [mo,da]=doyMD(+dayEl.value); const hod=(+hourEl.value)/60;
-  document.getElementById("dLbl").textContent=MON[mo-1]+" "+da;
+  document.getElementById("dLbl").textContent=da+". "+MON[mo-1];
   document.getElementById("tLbl").textContent=String(Math.floor(hod)).padStart(2,"0")+":"+String(Math.round(hod%1*60)).padStart(2,"0");
   const {az,el}=sunAzEl(2025,mo,da,hod);
   document.getElementById("elv").textContent=el.toFixed(0)+"°";
@@ -158,8 +151,6 @@ function updateSun(){
   scene.requestRender();
 }
 dayEl.oninput=updateSun; hourEl.oninput=updateSun;
-hdgEl.oninput=()=>{ document.getElementById("hdgL").textContent=hdgEl.value+"°"; updateProposalMatrix(); scene.requestRender(); };
-hgtEl.oninput=()=>{ document.getElementById("hgtL").textContent=Math.round(hgtEl.value)+" m"; updateProposalMatrix(); scene.requestRender(); };
 document.getElementById("toggle").onchange=(e)=>{ if(proposal) proposal.show=e.target.checked; scene.requestRender(); };
 // --- Street-View-style Pegman: drag the figure onto the map to stand at eye level ---
 const EYE = 1.7;
@@ -179,6 +170,22 @@ function standAt(pos){
   Cesium.Cartesian3.normalize(dir, dir);
   viewer.camera.setView({ destination: eye, orientation: { direction: dir, up } });
 }
+function moveForward(step){
+  const cam = viewer.camera;
+  const up = Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(cam.positionWC, new Cesium.Cartesian3());
+  // current facing, flattened to horizontal
+  const fwd = Cesium.Cartesian3.clone(cam.directionWC, new Cesium.Cartesian3());
+  const dd = Cesium.Cartesian3.dot(fwd, up);
+  Cesium.Cartesian3.subtract(fwd, Cesium.Cartesian3.multiplyByScalar(up, dd, new Cesium.Cartesian3()), fwd);
+  if (Cesium.Cartesian3.magnitude(fwd) < 1e-6) return;
+  Cesium.Cartesian3.normalize(fwd, fwd);
+  const ahead = Cesium.Cartesian3.add(cam.positionWC, Cesium.Cartesian3.multiplyByScalar(fwd, step, new Cesium.Cartesian3()), new Cesium.Cartesian3());
+  const ground = scene.clampToHeight(ahead, proposal ? [proposal] : []);   // stay on terrain, don't climb the hall
+  const base = Cesium.defined(ground) ? ground : ahead;
+  const up2 = Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(base, new Cesium.Cartesian3());
+  const eye = Cesium.Cartesian3.add(base, Cesium.Cartesian3.multiplyByScalar(up2, EYE, new Cesium.Cartesian3()), new Cesium.Cartesian3());
+  cam.setView({ destination: eye, orientation: { direction: cam.directionWC, up: up2 } });
+}
 function setGround(on){
   groundMode = on;
   document.getElementById("pegman").style.opacity = on ? 0.4 : 1;
@@ -187,19 +194,17 @@ function setGround(on){
     cc.lookEventTypes = [Cesium.CameraEventType.LEFT_DRAG];
     cc.zoomEventTypes = [Cesium.CameraEventType.WHEEL, Cesium.CameraEventType.PINCH];
     cc.enableCollisionDetection = false;
-    tipEl.textContent = "Street level · drag = look around · click ground = move · ⌂ Site = exit";
+    tipEl.textContent = "Gateplan · dra = se deg rundt · dobbeltklikk = gå framover · ⌂ Oversikt = avslutt";
   } else {
     cc.rotateEventTypes = DEF.rot; cc.tiltEventTypes = DEF.tilt; cc.translateEventTypes = DEF.tr;
     cc.lookEventTypes = DEF.look; cc.zoomEventTypes = DEF.zoom; cc.enableCollisionDetection = true;
     tipEl.textContent = "";
   }
 }
-// click the ground (while standing) to walk to a new spot
-new Cesium.ScreenSpaceEventHandler(viewer.canvas).setInputAction((e)=>{
-  if (!groundMode) return;
-  const p = scene.pickPosition(e.position);
-  if (Cesium.defined(p)) standAt(p);
-}, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+// double-click (while standing) = step forward in the facing direction
+new Cesium.ScreenSpaceEventHandler(viewer.canvas).setInputAction(()=>{
+  if (groundMode) moveForward(16);
+}, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
 
 // pegman drag-and-drop
 const peg = document.getElementById("pegman");
@@ -226,7 +231,7 @@ peg.addEventListener("pointerup",(e)=>{
 document.getElementById("bHome").onclick=()=>{ if(groundMode) setGround(false); homeView(); };
 
 let playing=false, last=0;
-document.getElementById("bPlay").onclick=(e)=>{ playing=!playing; e.target.classList.toggle("on",playing); e.target.textContent=playing?"❚❚ Day":"▶ Day"; };
+document.getElementById("bPlay").onclick=(e)=>{ playing=!playing; e.target.classList.toggle("on",playing); e.target.textContent=playing?"❚❚ Dag":"▶ Dag"; };
 viewer.clock.onTick.addEventListener(()=>{
   if(!playing) return;
   const now=performance.now(); if(!last) last=now; const dt=(now-last)/1000; last=now;
@@ -234,7 +239,7 @@ viewer.clock.onTick.addEventListener(()=>{
   updateSun();
 });
 
-init().catch(err=>{ document.getElementById("load").textContent="Error: "+err.message; console.error(err); });
+init().catch(err=>{ document.getElementById("load").textContent="Feil: "+err.message; console.error(err); });
 </script>
 </body>
 </html>
