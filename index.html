@@ -192,15 +192,21 @@ function updateSun(){
 }
 dayEl.oninput = updateSun; hourEl.oninput = updateSun;
 
-// ---- click ground to stand there ----
+// ---- clean click (not drag) on the ground to stand there ----
+let pendingStand = null;
+let downPt = null;
 renderer.domElement.addEventListener('pointerdown', (ev)=>{
-  if (mode!=='orbit' || ev.button!==0) return;
+  if (ev.button===0) downPt = { x:ev.clientX, y:ev.clientY };
+});
+renderer.domElement.addEventListener('pointerup', (ev)=>{
+  const d = downPt; downPt = null;
+  if (mode!=='orbit' || ev.button!==0 || !d) return;
+  if (Math.hypot(ev.clientX-d.x, ev.clientY-d.y) > 6) return;  // was a drag -> orbit keeps it
   const m = new THREE.Vector2((ev.clientX/innerWidth)*2-1, -(ev.clientY/innerHeight)*2+1);
   ray.setFromCamera(m, camera);
   const hit = terrain ? ray.intersectObject(terrain, true) : [];
   if (hit.length){ pendingStand = hit[0].point.clone(); setMode('walk'); }
 });
-let pendingStand = null;
 
 // ---- mode switching ----
 const bOrbit=document.getElementById('bOrbit'), bWalk=document.getElementById('bWalk');
