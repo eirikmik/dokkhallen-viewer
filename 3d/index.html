@@ -80,6 +80,8 @@ scene.globe.show = false;                 // show only the Google mesh
 scene.skyAtmosphere.show = true;
 scene.shadowMap.size = 2048;
 scene.shadowMap.softShadows = true;
+scene.shadowMap.fadingEnabled = false;   // keep low-sun shadows (Cesium otherwise fades them near the horizon)
+scene.shadowMap.maximumDistance = 10000; // allow long low-angle shadows
 scene.light = new Cesium.SunLight();
 viewer.clock.shouldAnimate = false;
 
