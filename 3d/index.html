@@ -43,6 +43,12 @@
   </div>
   <label class="chk"><input id="toggle" type="checkbox" checked/> Show proposed Dokkhallen</label>
   <div class="btns"><button id="bPlay">▶ Day</button><button id="bHome">⌂ Site</button></div>
+  <div class="row" style="display:flex;align-items:center;gap:10px;margin-top:10px">
+    <div id="pegman" title="Drag me onto the map to stand there (eye 1.7 m)"
+         style="font-size:28px;cursor:grab;user-select:none;line-height:1;touch-action:none">🧍</div>
+    <span style="color:var(--mut);font-size:11px">Drag the figure onto the map for a street-level view</span>
+  </div>
+  <div class="sub" id="tip" style="margin-top:8px"></div>
   <details>
     <summary>Align proposal (if it floats / is rotated)</summary>
     <div class="row"><label>Heading <b id="hdgL">90°</b></label><input id="hdg" type="range" min="-180" max="180" step="0.5" value="90"/></div>
@@ -155,7 +161,69 @@ dayEl.oninput=updateSun; hourEl.oninput=updateSun;
 hdgEl.oninput=()=>{ document.getElementById("hdgL").textContent=hdgEl.value+"°"; updateProposalMatrix(); scene.requestRender(); };
 hgtEl.oninput=()=>{ document.getElementById("hgtL").textContent=Math.round(hgtEl.value)+" m"; updateProposalMatrix(); scene.requestRender(); };
 document.getElementById("toggle").onchange=(e)=>{ if(proposal) proposal.show=e.target.checked; scene.requestRender(); };
-document.getElementById("bHome").onclick=()=>homeView();
+// --- Street-View-style Pegman: drag the figure onto the map to stand at eye level ---
+const EYE = 1.7;
+const cc = scene.screenSpaceCameraController;
+const DEF = { rot:cc.rotateEventTypes, tilt:cc.tiltEventTypes, tr:cc.translateEventTypes, look:cc.lookEventTypes, zoom:cc.zoomEventTypes };
+let groundMode = false;
+const tipEl = document.getElementById("tip");
+
+function standAt(pos){
+  const up = Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(pos, new Cesium.Cartesian3());
+  const eye = Cesium.Cartesian3.add(pos, Cesium.Cartesian3.multiplyByScalar(up, EYE, new Cesium.Cartesian3()), new Cesium.Cartesian3());
+  const hall = Cesium.Cartesian3.fromDegrees(LON, LAT, 15);
+  let dir = Cesium.Cartesian3.subtract(hall, eye, new Cesium.Cartesian3());
+  const d = Cesium.Cartesian3.dot(dir, up);
+  Cesium.Cartesian3.subtract(dir, Cesium.Cartesian3.multiplyByScalar(up, d, new Cesium.Cartesian3()), dir);  // horizontalise
+  if (Cesium.Cartesian3.magnitude(dir) < 0.5) dir = Cesium.Cartesian3.cross(up, Cesium.Cartesian3.UNIT_Z, new Cesium.Cartesian3());
+  Cesium.Cartesian3.normalize(dir, dir);
+  viewer.camera.setView({ destination: eye, orientation: { direction: dir, up } });
+}
+function setGround(on){
+  groundMode = on;
+  document.getElementById("pegman").style.opacity = on ? 0.4 : 1;
+  if (on){
+    cc.rotateEventTypes = []; cc.tiltEventTypes = []; cc.translateEventTypes = [];
+    cc.lookEventTypes = [Cesium.CameraEventType.LEFT_DRAG];
+    cc.zoomEventTypes = [Cesium.CameraEventType.WHEEL, Cesium.CameraEventType.PINCH];
+    cc.enableCollisionDetection = false;
+    tipEl.textContent = "Street level · drag = look around · click ground = move · ⌂ Site = exit";
+  } else {
+    cc.rotateEventTypes = DEF.rot; cc.tiltEventTypes = DEF.tilt; cc.translateEventTypes = DEF.tr;
+    cc.lookEventTypes = DEF.look; cc.zoomEventTypes = DEF.zoom; cc.enableCollisionDetection = true;
+    tipEl.textContent = "";
+  }
+}
+// click the ground (while standing) to walk to a new spot
+new Cesium.ScreenSpaceEventHandler(viewer.canvas).setInputAction((e)=>{
+  if (!groundMode) return;
+  const p = scene.pickPosition(e.position);
+  if (Cesium.defined(p)) standAt(p);
+}, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+// pegman drag-and-drop
+const peg = document.getElementById("pegman");
+let ghost = null;
+function moveGhost(x,y){ if(ghost){ ghost.style.left=x+"px"; ghost.style.top=y+"px"; } }
+peg.addEventListener("pointerdown",(e)=>{
+  e.preventDefault(); peg.setPointerCapture(e.pointerId);
+  ghost = document.createElement("div"); ghost.textContent = "🧍";
+  ghost.style.cssText = "position:fixed;font-size:38px;pointer-events:none;z-index:50;transform:translate(-50%,-92%);filter:drop-shadow(0 2px 3px #000a)";
+  document.body.appendChild(ghost); moveGhost(e.clientX, e.clientY);
+  viewer.canvas.style.cursor = "crosshair";
+});
+peg.addEventListener("pointermove",(e)=>{ if(ghost) moveGhost(e.clientX, e.clientY); });
+peg.addEventListener("pointerup",(e)=>{
+  if(!ghost) return;
+  ghost.remove(); ghost = null; viewer.canvas.style.cursor = "";
+  const r = viewer.canvas.getBoundingClientRect();
+  if (e.clientX>=r.left && e.clientX<=r.right && e.clientY>=r.top && e.clientY<=r.bottom){
+    const p = scene.pickPosition(new Cesium.Cartesian2(e.clientX-r.left, e.clientY-r.top));
+    if (Cesium.defined(p)){ setGround(true); standAt(p); }
+  }
+});
+
+document.getElementById("bHome").onclick=()=>{ if(groundMode) setGround(false); homeView(); };
 
 let playing=false, last=0;
 document.getElementById("bPlay").onclick=(e)=>{ playing=!playing; e.target.classList.toggle("on",playing); e.target.textContent=playing?"❚❚ Day":"▶ Day"; };
