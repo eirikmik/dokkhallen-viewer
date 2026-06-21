@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="nb">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Dokkhallen Harstad — interactive sun viewer</title>
+<title>Dokkhallen Harstad — interaktiv solvisning</title>
 <style>
   :root { --bg:#0e1116; --panel:#171c24; --line:#2a323d; --txt:#e7ecf2; --mut:#8b97a6; --acc:#4ea3ff; }
   * { box-sizing:border-box; }
@@ -39,35 +39,35 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="load">Loading model…</div>
+<div id="load">Laster modell…</div>
 <div id="ui">
   <h1>Dokkhallen Harstad</h1>
-  <div class="sub">68.797°N 16.543°E · sun &amp; shadows, live</div>
+  <div class="sub">68,797°N 16,543°E · sol og skygger i sanntid</div>
   <div class="row">
-    <label>Date <b id="dLbl">Jun 21</b></label>
+    <label>Dato <b id="dLbl">21. jun</b></label>
     <input id="day" type="range" min="0" max="364" value="171"/>
   </div>
   <div class="row">
-    <label>Time (CET) <b id="tLbl">13:00</b></label>
+    <label>Klokkeslett (CET) <b id="tLbl">13:00</b></label>
     <input id="hour" type="range" min="0" max="1439" value="780"/>
   </div>
   <div class="readout">
-    <div class="chip"><span>SUN ELEV</span><b id="elv">–</b></div>
-    <div class="chip"><span>AZIMUTH</span><b id="azm">–</b></div>
+    <div class="chip"><span>SOLHØYDE</span><b id="elv">–</b></div>
+    <div class="chip"><span>ASIMUT</span><b id="azm">–</b></div>
   </div>
   <label style="display:flex;align-items:center;gap:8px;margin:10px 0 2px;cursor:pointer;color:var(--txt);font-size:12px">
-    <input id="toggle" type="checkbox" checked style="accent-color:var(--acc);width:15px;height:15px"/> Show proposed Dokkhallen</label>
+    <input id="toggle" type="checkbox" checked style="accent-color:var(--acc);width:15px;height:15px"/> Vis foreslått dokkhall</label>
   <div class="btns">
-    <button id="bOrbit" class="on">Orbit</button>
-    <button id="bWalk">Walk (1.5 m)</button>
-    <button id="bPlay">▶ Day</button>
+    <button id="bOrbit" class="on">Oversikt</button>
+    <button id="bWalk">Gå (1,5 m)</button>
+    <button id="bPlay">▶ Dag</button>
   </div>
   <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
-    <div id="pegman" title="Drag onto the map to stand there (1.5 m)" style="font-size:26px;cursor:grab;user-select:none;touch-action:none">🧍</div>
-    <span style="color:var(--mut);font-size:11px">Drag the figure onto the map for street level</span>
+    <div id="pegman" title="Dra ut på kartet for å stå der (1,5 m)" style="font-size:26px;cursor:grab;user-select:none;touch-action:none">🧍</div>
+    <span style="color:var(--mut);font-size:11px">Dra figuren ut på kartet for gateplan</span>
   </div>
 </div>
-<div id="hint">Drag to look · scroll to zoom · drag the <b>🧍</b> to stand · Walk: <b>WASD</b> · <b>Esc</b> for panel, click viewport to resume</div>
+<div id="hint">Dra for å se · rull for zoom · dra <b>🧍</b> for å stå · Gå: <b>WASD</b> · <b>Esc</b> for panel, klikk i visningen for å fortsette</div>
 
 <script type="importmap">
 { "imports": {
@@ -105,7 +105,7 @@ function sunAzEl(year, month, day, hourLocal) {
   az = (az%360+360)%360;
   return { az, el };
 }
-const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const MON = ["jan","feb","mar","apr","mai","jun","jul","aug","sep","okt","nov","des"];
 const MDAYS = [31,28,31,30,31,30,31,31,30,31,30,31];
 function doyToMD(doy){ let m=0,d=doy; while(d>=MDAYS[m]){d-=MDAYS[m];m++;} return [m+1,d+1]; }
 
@@ -208,7 +208,7 @@ gltfLoader.load('scene.glb', (g)=>{
   scene.add(g.scene);
   document.getElementById('load').remove();
   updateSun();
-}, undefined, (e)=>{ document.getElementById('load').textContent = 'Failed to load scene.glb — run a local server (see README).'; });
+}, undefined, (e)=>{ document.getElementById('load').textContent = 'Kunne ikke laste scene.glb — kjør en lokal server (se README).'; });
 // colored city buildings (Google-sampled) with procedural windows
 gltfLoader.load('city_colored.glb', (g)=>{
   const fm = makeFacade();
@@ -221,7 +221,7 @@ const dayEl=document.getElementById('day'), hourEl=document.getElementById('hour
 function updateSun(){
   const [mo,da] = doyToMD(+dayEl.value);
   const hod = (+hourEl.value)/60;
-  document.getElementById('dLbl').textContent = MON[mo-1]+' '+da;
+  document.getElementById('dLbl').textContent = da+'. '+MON[mo-1];
   document.getElementById('tLbl').textContent = String(Math.floor(hod)).padStart(2,'0')+':'+String(Math.round((hod%1)*60)).padStart(2,'0');
   const {az,el} = sunAzEl(2025, mo, da, hod);
   document.getElementById('elv').textContent = el.toFixed(0)+'°';
@@ -311,7 +311,7 @@ peg.addEventListener('pointerup',(e)=>{
 
 // ---- play day ----
 let playing=false;
-document.getElementById('bPlay').onclick=(e)=>{ playing=!playing; e.target.classList.toggle('on',playing); e.target.textContent = playing?'❚❚ Day':'▶ Day'; };
+document.getElementById('bPlay').onclick=(e)=>{ playing=!playing; e.target.classList.toggle('on',playing); e.target.textContent = playing?'❚❚ Dag':'▶ Dag'; };
 
 // ---- loop ----
 const clock = new THREE.Clock();
