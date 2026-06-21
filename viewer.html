@@ -200,9 +200,12 @@ gltfLoader.load('scene.glb', (g)=>{
   g.scene.traverse(o=>{
     if (o.isMesh){
       o.castShadow = true; o.receiveShadow = true;
-      if (o.material && o.material.map) terrain = o;
-      else proposal = o;                       // the non-terrain mesh = the hall
-      if (o.material) o.material.roughness = 0.92;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      if (mats.some(m=>m && m.map)) {          // terrain (multi-material ortho)
+        terrain = o; mats.forEach(m=>{ if(m) m.roughness = 0.95; });
+      } else {                                  // the non-terrain mesh = the hall
+        proposal = o; if(o.material) o.material.roughness = 0.92;
+      }
     }
   });
   scene.add(g.scene);
