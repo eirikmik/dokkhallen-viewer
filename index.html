@@ -233,7 +233,7 @@ const clock = new THREE.Clock();
 function animate(){
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
-  if (playing){ hourEl.value = (+hourEl.value + dt*180)%1440; updateSun(); }
+  if (playing){ hourEl.value = (+hourEl.value + dt*90)%1440; updateSun(); }
   if (mode==='walk' && walk.isLocked){
     const sp = (keys['ShiftLeft']?34:14)*dt;
     if(keys['KeyW']) walk.moveForward(sp);
