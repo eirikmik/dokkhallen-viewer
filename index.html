@@ -47,6 +47,12 @@
     #ui { width:calc(100vw - 24px); max-width:300px; }
     #hint { display:none; }
   }
+  #joy { position:fixed; left:22px; bottom:22px; width:112px; height:112px; border-radius:50%;
+    background:rgba(20,26,34,.45); border:1px solid var(--line); display:none; z-index:40;
+    touch-action:none; backdrop-filter:blur(3px); }
+  #joyKnob { position:absolute; left:50%; top:50%; width:48px; height:48px; border-radius:50%;
+    background:rgba(120,165,215,.9); border:1px solid var(--acc); transform:translate(-50%,-50%);
+    pointer-events:none; }
 </style>
 </head>
 <body>
@@ -84,6 +90,7 @@
   </div>
 </div>
 <div id="hint">Dra for å se · rull for zoom · dra <b>🧍</b> for å stå · Gå: <b>WASD</b> · <b>Esc</b> for panel, klikk i visningen for å fortsette</div>
+<div id="joy"><div id="joyKnob"></div></div>
 <script>
   (function(){
     const ui = document.getElementById('ui');
@@ -191,6 +198,11 @@ let mode = 'orbit';
 const keys = {};
 addEventListener('keydown', e=>keys[e.code]=true);
 addEventListener('keyup',   e=>keys[e.code]=false);
+// touch walk (mobile): joystick to move + drag to look, no pointer-lock
+const isTouch = matchMedia('(pointer:coarse)').matches || ('ontouchstart' in window);
+let touchWalk = false;
+const look = new THREE.Euler(0,0,0,'YXZ');
+const joyVec = { x:0, y:0 };
 
 const terrains = [];
 let proposal = null;
@@ -344,8 +356,16 @@ function setMode(m){
     if (fwd.lengthSq() < 1e-4) fwd.set(0,0,-1);
     fwd.normalize();
     camera.lookAt(camera.position.clone().add(fwd));
-    walk.lock();
+    if (isTouch){                           // mobile: joystick + drag-look, no lock
+      touchWalk = true;
+      look.setFromQuaternion(camera.quaternion); look.z = 0;
+      joy.style.display = 'block';
+    } else {
+      walk.lock();
+    }
   } else {                                  // orbit: fully reset to the overview
+    touchWalk = false; joy.style.display = 'none';
+    joyVec.x = joyVec.y = 0; joyKnob.style.transform = 'translate(-50%,-50%)';
     if(walk.isLocked) walk.unlock();
     camera.up.set(0,1,0);
     camera.position.set(280, 260, 360);
@@ -357,7 +377,35 @@ bOrbit.onclick=()=>setMode('orbit');
 bWalk.onclick=()=>setMode('walk');
 walk.addEventListener('unlock', ()=>{ if(mode==='walk'){ /* stay in walk; click viewport to re-lock */ } });
 // Esc unlocks the pointer (to use the panel); clicking back on the viewport re-locks walk
-renderer.domElement.addEventListener('click', ()=>{ if(mode==='walk' && !walk.isLocked) walk.lock(); });
+renderer.domElement.addEventListener('click', ()=>{ if(!isTouch && mode==='walk' && !walk.isLocked) walk.lock(); });
+
+// ---- mobile walk: joystick (move) + drag-to-look ----
+const joy = document.getElementById('joy'), joyKnob = document.getElementById('joyKnob');
+const JR = 38;  // max knob travel (px)
+let joyId = null;
+function setJoy(e){
+  const r = joy.getBoundingClientRect();
+  let x = e.clientX-(r.left+r.width/2), y = e.clientY-(r.top+r.height/2);
+  const d = Math.hypot(x,y); if (d>JR){ x=x/d*JR; y=y/d*JR; }
+  joyVec.x = x/JR; joyVec.y = y/JR;
+  joyKnob.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+}
+function joyEnd(e){ if(joyId===e.pointerId){ joyId=null; joyVec.x=joyVec.y=0;
+  joyKnob.style.transform='translate(-50%,-50%)'; } }
+joy.addEventListener('pointerdown', e=>{ e.preventDefault(); joy.setPointerCapture(e.pointerId); joyId=e.pointerId; setJoy(e); });
+joy.addEventListener('pointermove', e=>{ if(joyId===e.pointerId) setJoy(e); });
+joy.addEventListener('pointerup', joyEnd); joy.addEventListener('pointercancel', joyEnd);
+// drag anywhere on the viewport to look around (touch walk only)
+let lookId=null, lookX=0, lookY=0;
+renderer.domElement.addEventListener('pointerdown', e=>{ if(touchWalk && lookId===null){ lookId=e.pointerId; lookX=e.clientX; lookY=e.clientY; } });
+renderer.domElement.addEventListener('pointermove', e=>{
+  if(!touchWalk || e.pointerId!==lookId) return;
+  look.y -= (e.clientX-lookX)*0.005; look.x -= (e.clientY-lookY)*0.005;
+  look.x = Math.max(-1.45, Math.min(1.45, look.x));
+  lookX=e.clientX; lookY=e.clientY;
+  camera.quaternion.setFromEuler(look);
+});
+addEventListener('pointerup', e=>{ if(e.pointerId===lookId) lookId=null; });
 
 // ---- proposed Dokkhallen on/off ----
 document.getElementById('toggle').onchange = (e)=>{ if(proposal) proposal.visible = e.target.checked; };
@@ -400,12 +448,14 @@ function animate(){
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
   if (playing){ hourEl.value = (+hourEl.value + dt*90)%1440; updateSun(); }
-  if (mode==='walk' && walk.isLocked){
+  if (mode==='walk' && (walk.isLocked || touchWalk)){
     const sp = (keys['ShiftLeft']?34:14)*dt;
-    if(keys['KeyW']) walk.moveForward(sp);
-    if(keys['KeyS']) walk.moveForward(-sp);
-    if(keys['KeyA']) walk.moveRight(-sp);
-    if(keys['KeyD']) walk.moveRight(sp);
+    let f=0, r=0;
+    if(keys['KeyW']) f+=1; if(keys['KeyS']) f-=1;
+    if(keys['KeyA']) r-=1; if(keys['KeyD']) r+=1;
+    if(touchWalk){ f += -joyVec.y; r += joyVec.x; }
+    if(f) walk.moveForward(f*sp);
+    if(r) walk.moveRight(r*sp);
     camera.position.y = groundY(camera.position.x, camera.position.z)+1.5;
   } else if (mode==='orbit'){ orbit.update(); }
   renderer.render(scene, camera);
