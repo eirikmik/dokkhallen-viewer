@@ -93,7 +93,6 @@
     <input id="hard" type="checkbox" style="accent-color:var(--acc);width:15px;height:15px"/> Harde skygger</label>
   <div class="btns">
     <button id="bOrbit" class="on">Oversikt</button>
-    <button id="bWalk">Gå (1,5 m)</button>
     <button id="bPlay">▶ Dag</button>
   </div>
   <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
@@ -380,10 +379,10 @@ dayEl.oninput = ()=>{ stopLive(); updateSun(); }; hourEl.oninput = ()=>{ stopLiv
 let pendingStand = null;
 
 // ---- mode switching ----
-const bOrbit=document.getElementById('bOrbit'), bWalk=document.getElementById('bWalk');
+const bOrbit=document.getElementById('bOrbit');
 function setMode(m){
   mode=m;
-  bOrbit.classList.toggle('on', m==='orbit'); bWalk.classList.toggle('on', m==='walk');
+  bOrbit.classList.toggle('on', m==='orbit');
   if (m==='walk'){
     orbit.enabled=false;
     camera.up.set(0,1,0);
@@ -412,7 +411,6 @@ function setMode(m){
   }
 }
 bOrbit.onclick=()=>setMode('orbit');
-bWalk.onclick=()=>setMode('walk');
 walk.addEventListener('unlock', ()=>{ if(mode==='walk'){ /* stay in walk; click viewport to re-lock */ } });
 // Esc unlocks the pointer (to use the panel); clicking back on the viewport re-locks walk
 renderer.domElement.addEventListener('click', ()=>{ if(!isTouch && mode==='walk' && !walk.isLocked) walk.lock(); });
