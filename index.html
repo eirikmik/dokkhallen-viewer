@@ -35,13 +35,25 @@
   #hint b { color:var(--txt); }
   #load { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
     background:var(--bg); color:var(--mut); font-size:14px; z-index:5; }
+  #uiHdr { display:flex; align-items:center; justify-content:space-between; cursor:pointer;
+    user-select:none; }
+  #uiHdr h1 { margin:0; }
+  #uiTog { color:var(--mut); font-size:12px; transition:transform .15s; }
+  #ui.collapsed #uiTog { transform:rotate(-90deg); }
+  #ui.collapsed #uiBody { display:none; }
+  #uiBody { margin-top:8px; }
+  @media (max-width:640px) {
+    #ui { width:calc(100vw - 24px); max-width:300px; }
+    #hint { display:none; }
+  }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="load">Laster modell…</div>
 <div id="ui">
-  <h1>Dokkhallen Harstad</h1>
+  <div id="uiHdr"><h1>Dokkhallen Harstad</h1><span id="uiTog">▾</span></div>
+  <div id="uiBody">
   <div class="sub">68,797°N 16,543°E · sol og skygger i sanntid</div>
   <div class="row">
     <label>Dato <b id="dLbl">21. jun</b></label>
@@ -68,8 +80,16 @@
     <div id="pegman" title="Dra ut på kartet for å stå der (1,5 m)" style="font-size:26px;cursor:grab;user-select:none;touch-action:none">🧍</div>
     <span style="color:var(--mut);font-size:11px">Dra figuren ut på kartet for gateplan</span>
   </div>
+  </div>
 </div>
 <div id="hint">Dra for å se · rull for zoom · dra <b>🧍</b> for å stå · Gå: <b>WASD</b> · <b>Esc</b> for panel, klikk i visningen for å fortsette</div>
+<script>
+  (function(){
+    const ui = document.getElementById('ui');
+    document.getElementById('uiHdr').addEventListener('click', () => ui.classList.toggle('collapsed'));
+    if (window.innerWidth < 640) ui.classList.add('collapsed');
+  })();
+</script>
 
 <script type="importmap">
 { "imports": {
