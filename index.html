@@ -307,6 +307,36 @@ function makeFacade(){
   };
   return m;
 }
+// Dokkhallen cladding: matte near-black roof + light blue-grey "pixel" panel mosaic on the walls
+function makeHall(){
+  const m = new THREE.MeshStandardMaterial({ color:0xffffff, roughness:0.86, metalness:0.0 });
+  m.onBeforeCompile = (sh)=>{
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vHP; varying vec3 vHN;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n vHP=(modelMatrix*vec4(transformed,1.0)).xyz; vHN=mat3(modelMatrix)*objectNormal;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vHP; varying vec3 vHN;\nfloat h21(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+      { vec3 n=normalize(vHN);
+        if (abs(n.y) > 0.5){
+          diffuseColor.rgb = vec3(0.022,0.024,0.030);          // matte dark roof
+        } else {
+          float hc = abs(n.x) > abs(n.z) ? vHP.z : vHP.x;      // coordinate along the wall
+          vec2 cell = vec2(floor(hc/2.4), floor(vHP.y/1.6));   // ~2.4 x 1.6 m panels
+          float r = h21(cell), r2 = h21(cell+37.3);
+          vec3 paleBlue = vec3(0.50,0.63,0.78);
+          vec3 white    = vec3(0.82,0.85,0.88);
+          vec3 grey     = vec3(0.58,0.63,0.69);
+          vec3 col = white;
+          col = mix(col, paleBlue, smoothstep(0.45,0.95,r));   // scattered blue panels
+          col = mix(col, grey, smoothstep(0.82,1.0,r2)*0.7);   // a few greys
+          col *= 0.93 + 0.12*r2;                               // subtle per-panel tone
+          diffuseColor.rgb = col;
+        }
+      }`);
+  };
+  return m;
+}
 window.tuneWindows = (o={})=>{
   const map={glass:'uGlass',tint:'uTint',spandrel:'uSpandrel',win:'uWin',floor:'uFloor',winW:'uWinW',frame:'uFrame'};
   for(const k in o){ if(map[k]) FACADE_U[map[k]].value=o[k]; }
@@ -326,7 +356,7 @@ gltfLoader.load('scene.glb', (g)=>{
       if (mats.some(m=>m && m.map)) {          // terrain (multi-material ortho)
         terrains.push(o); mats.forEach(m=>{ if(m) m.roughness = 0.95; });
       } else {                                  // the non-terrain mesh = the hall
-        proposal = o; if(o.material){ o.material.roughness = 0.92; o.material.color.set('#8c8175'); } // warm grey-brown cladding
+        proposal = o; o.material = makeHall();   // architectural look: dark roof + pale-blue panel mosaic
       }
     }
   });
