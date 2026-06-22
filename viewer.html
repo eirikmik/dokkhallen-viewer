@@ -386,7 +386,7 @@ function updateSun(){
   const warm = THREE.MathUtils.clamp(1-(el/10), 0, 1);  // redden near horizon
   sun.color.setRGB(1, 1-0.32*warm, 1-0.6*warm);
 }
-dayEl.oninput = ()=>{ stopLive(); updateSun(); }; hourEl.oninput = ()=>{ stopLive(); updateSun(); };
+dayEl.oninput = ()=>{ stopLive(); updateSun(); }; hourEl.oninput = ()=>{ stopLive(); playH=+hourEl.value; updateSun(); };
 
 // stand point is set only by dropping the Pegman (click-to-walk disabled)
 let pendingStand = null;
@@ -548,10 +548,10 @@ bShare.onclick=()=>{
   }).catch(()=>{});
 };
 
-// ---- play day ----
-let playing=false;
+// ---- play time ----
+let playing=false, playH=0;   // playH: float minute-of-day accumulator (slider clamps at 1439, so we can't read time back from it)
 const bPlay=document.getElementById('bPlay');
-bPlay.onclick=()=>{ playing=!playing; if(playing) stopLive(); bPlay.classList.toggle('on',playing); bPlay.textContent = playing?'❚❚ Tid':'▶ Tid'; };
+bPlay.onclick=()=>{ playing=!playing; if(playing){ stopLive(); playH=+hourEl.value; } bPlay.classList.toggle('on',playing); bPlay.textContent = playing?'❚❚ Tid':'▶ Tid'; };
 
 // ---- loop ----
 const clock = new THREE.Clock();
@@ -559,9 +559,10 @@ function animate(){
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
   if (playing){
-    let h = +hourEl.value + dt*90;
-    while (h >= 1440){ h -= 1440; dayEl.value = (+dayEl.value + 1) % 365; }   // roll into next day
-    hourEl.value = h; updateSun();
+    playH += dt*90;
+    while (playH >= 1440){ playH -= 1440; dayEl.value = (+dayEl.value + 1) % 365; }   // roll into next day
+    hourEl.value = playH;   // clamps to 1439 for display only; playH keeps the true time
+    updateSun();
   }
   if (mode==='walk' && (walk.isLocked || touchWalk)){
     const sp = (keys['ShiftLeft']?34:14)*dt;
