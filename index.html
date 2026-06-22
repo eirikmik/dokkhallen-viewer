@@ -21,9 +21,10 @@
   input[type=range] { width:100%; accent-color:var(--acc); }
   .readout { display:flex; gap:8px; margin-top:6px; }
   .chip { flex:1; background:#0f141b; border:1px solid var(--line); border-radius:7px;
-    padding:7px 8px; text-align:center; }
-  .chip span { display:block; color:var(--mut); font-size:10px; }
+    padding:5px 8px; text-align:center; }
+  .chip span { display:block; color:var(--mut); font-size:10px; letter-spacing:.04em; }
   .chip b { font-size:15px; font-variant-numeric:tabular-nums; }
+  #pegman:hover { border-color:var(--acc); }
   .btns { display:flex; gap:6px; margin-top:12px; }
   button { flex:1; background:#222b36; color:var(--txt); border:1px solid var(--line);
     border-radius:7px; padding:8px; cursor:pointer; font-size:12px; }
@@ -72,16 +73,16 @@
   <div id="uiBody">
   <div class="sub">68,797°N 16,543°E · sol og skygger i sanntid</div>
   <div class="row">
-    <label>Dato <b id="dLbl">21. jun</b></label>
+    <label><span>Dato</span> <b id="dLbl">21. jun</b></label>
     <input id="day" type="range" min="0" max="364" value="171"/>
   </div>
   <div class="row">
-    <label>Klokkeslett (<span id="tz">CET</span>) <b id="tLbl">13:00</b></label>
+    <label><span>Klokkeslett (<span id="tz">CET</span>)</span> <b id="tLbl">13:00</b></label>
     <input id="hour" type="range" min="0" max="1439" value="780"/>
   </div>
-  <div style="display:flex;gap:6px;margin-top:2px">
-    <button id="bNow" style="flex:none;padding:5px 12px;font-size:11px">↻ Nå</button>
-    <button id="bSpin" style="flex:none;padding:5px 12px;font-size:11px">⟳ Roter</button>
+  <div style="display:flex;gap:6px;margin-top:6px">
+    <button id="bNow" style="flex:1;padding:6px;font-size:11px">↻ Nå</button>
+    <button id="bSpin" style="flex:1;padding:6px;font-size:11px">⟳ Roter</button>
   </div>
   <div class="readout">
     <div class="chip"><span>SOLHØYDE</span><b id="elv">–</b></div>
@@ -95,9 +96,9 @@
     <button id="bOrbit" class="on">Oversikt</button>
     <button id="bPlay">▶ Dag</button>
   </div>
-  <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
-    <div id="pegman" title="Dra ut på kartet for å stå der (1,5 m)" style="font-size:26px;cursor:grab;user-select:none;touch-action:none">🧍</div>
-    <span style="color:var(--mut);font-size:11px">Dra figuren ut på kartet for gateplan</span>
+  <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
+    <div id="pegman" title="Dra ut på kartet for å stå der (1,5 m)" style="font-size:22px;line-height:1;cursor:grab;user-select:none;touch-action:none;padding:5px 8px;background:#0f141b;border:1px solid var(--line);border-radius:8px">🧍</div>
+    <span style="color:var(--mut);font-size:11px">Dra figuren til kartet for gateplan (1,5 m)</span>
   </div>
   <button id="bShare" style="width:100%;margin-top:12px">🔗 Kopier delbar lenke</button>
   <div class="sub" style="margin:6px 0 0;font-size:10px">Bokmerk siden for å lagre dette utsiktspunktet som favoritt.</div>
