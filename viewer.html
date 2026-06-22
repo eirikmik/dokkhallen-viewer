@@ -88,7 +88,7 @@
   </div>
   <div style="display:flex;gap:6px;margin-top:6px">
     <button id="bNow" style="flex:1;padding:6px;font-size:11px">↻ Nå</button>
-    <button id="bPlay" style="flex:1;padding:6px;font-size:11px">▶ Dag</button>
+    <button id="bPlay" style="flex:1;padding:6px;font-size:11px">▶ Tid</button>
   </div>
   <div class="readout">
     <div class="chip"><span>SOLHØYDE</span><b id="elv">–</b></div>
@@ -551,14 +551,18 @@ bShare.onclick=()=>{
 // ---- play day ----
 let playing=false;
 const bPlay=document.getElementById('bPlay');
-bPlay.onclick=()=>{ playing=!playing; if(playing) stopLive(); bPlay.classList.toggle('on',playing); bPlay.textContent = playing?'❚❚ Dag':'▶ Dag'; };
+bPlay.onclick=()=>{ playing=!playing; if(playing) stopLive(); bPlay.classList.toggle('on',playing); bPlay.textContent = playing?'❚❚ Tid':'▶ Tid'; };
 
 // ---- loop ----
 const clock = new THREE.Clock();
 function animate(){
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
-  if (playing){ hourEl.value = (+hourEl.value + dt*90)%1440; updateSun(); }
+  if (playing){
+    let h = +hourEl.value + dt*90;
+    while (h >= 1440){ h -= 1440; dayEl.value = (+dayEl.value + 1) % 365; }   // roll into next day
+    hourEl.value = h; updateSun();
+  }
   if (mode==='walk' && (walk.isLocked || touchWalk)){
     const sp = (keys['ShiftLeft']?34:14)*dt;
     let f=0, r=0;
