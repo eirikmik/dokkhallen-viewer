@@ -96,6 +96,8 @@
     <div id="pegman" title="Dra ut på kartet for å stå der (1,5 m)" style="font-size:26px;cursor:grab;user-select:none;touch-action:none">🧍</div>
     <span style="color:var(--mut);font-size:11px">Dra figuren ut på kartet for gateplan</span>
   </div>
+  <button id="bShare" style="width:100%;margin-top:12px">🔗 Kopier delbar lenke</button>
+  <div class="sub" style="margin:6px 0 0;font-size:10px">Bokmerk siden for å lagre dette utsiktspunktet som favoritt.</div>
   </div>
 </div>
 <div id="hint">Dra for å se · rull for zoom · dra <b>🧍</b> for å stå · Gå: <b>WASD</b> · <b>Esc</b> for panel, klikk i visningen for å fortsette</div>
@@ -315,6 +317,7 @@ gltfLoader.load('scene.glb', (g)=>{
   scene.add(g.scene);
   document.getElementById('load').remove();
   updateSun();
+  restoreFromURL();          // jump to a shared/bookmarked view if ?v= is present
 }, undefined, (e)=>{ document.getElementById('load').textContent = 'Kunne ikke laste scene.glb — kjør en lokal server (se README).'; });
 // colored city buildings (Google-sampled) with procedural windows
 gltfLoader.load('city_colored.glb', (g)=>{
@@ -448,6 +451,42 @@ document.getElementById('hard').onchange = (e)=>{
   updateSun();
 };
 
+// ---- view <-> URL: live query string. Bookmark the page to save a favourite,
+//      copy the link to share. ?v=mode,day,hour,prop,hard,px,py,pz,tx,ty,tz ----
+const R1 = n => Math.round(n*10)/10;
+function viewToStr(){
+  const p = camera.position; let t;
+  if (mode==='walk'){ const f=new THREE.Vector3(); camera.getWorldDirection(f); t=p.clone().addScaledVector(f,100); }
+  else t = orbit.target;
+  return [ mode==='walk'?1:0, Math.round(+dayEl.value), Math.round(+hourEl.value),
+    document.getElementById('toggle').checked?1:0, document.getElementById('hard').checked?1:0,
+    R1(p.x),R1(p.y),R1(p.z), R1(t.x),R1(t.y),R1(t.z) ].join(',');
+}
+function applyViewStr(s){
+  const a=(s||'').split(',').map(Number);
+  if (a.length<11 || a.some(n=>!isFinite(n))) return false;
+  const [wk,day,hr,prop,hard,px,py,pz,tx,ty,tz]=a;
+  dayEl.value=day; hourEl.value=hr;
+  const tog=document.getElementById('toggle'); tog.checked=!!prop; if(proposal) proposal.visible=!!prop;
+  const hd=document.getElementById('hard'); if(!!hard!==hd.checked){ hd.checked=!!hard; hd.onchange({target:hd}); }
+  if (wk){
+    pendingStand = new THREE.Vector3(px,py,pz); setMode('walk');
+    camera.position.set(px,py,pz); camera.lookAt(tx,ty,tz);
+    look.setFromQuaternion(camera.quaternion); look.z=0;
+  } else {
+    setMode('orbit');
+    camera.position.set(px,py,pz); orbit.target.set(tx,ty,tz); orbit.update();
+  }
+  updateSun(); return true;
+}
+function restoreFromURL(){
+  const v=new URLSearchParams(location.search).get('v');
+  if (v) try { applyViewStr(v); } catch(_){}
+}
+let _urlT=0, _urlLast='';
+function writeURL(){ const s=viewToStr(); _urlLast=s; _urlT=0; history.replaceState(null,'', location.pathname+'?v='+s); }
+function syncURL(dt){ _urlT+=dt; if(_urlT<0.6) return; if(viewToStr()!==_urlLast) writeURL(); else _urlT=0; }
+
 // ---- Pegman: drag the figure onto the map to stand at 1.5 m ----
 const peg = document.getElementById('pegman');
 let pghost = null;
@@ -467,6 +506,16 @@ peg.addEventListener('pointerup',(e)=>{
   const hit = ray.intersectObjects(terrains, true);
   if(hit.length){ pendingStand = hit[0].point.clone(); setMode('walk'); }
 });
+
+// ---- share current view ----
+const bShare=document.getElementById('bShare');
+bShare.onclick=()=>{
+  writeURL();                                   // make the address bar current first
+  navigator.clipboard.writeText(location.href).then(()=>{
+    const t=bShare.textContent; bShare.textContent='✓ Lenke kopiert';
+    setTimeout(()=>bShare.textContent=t, 1500);
+  }).catch(()=>{});
+};
 
 // ---- play day ----
 let playing=false;
@@ -488,6 +537,7 @@ function animate(){
     if(r) walk.moveRight(r*sp);
     camera.position.y = groundY(camera.position.x, camera.position.z)+1.5;
   } else if (mode==='orbit'){ orbit.update(); }
+  syncURL(dt);                 // keep the URL in sync so bookmarks/links capture this view
   renderer.render(scene, camera);
 }
 animate();
