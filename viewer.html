@@ -69,6 +69,24 @@
     background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 12px;
     color:var(--mut); font-size:11px; line-height:1.55; }
   #info.open #infoBox { display:block; }
+  #gear { position:fixed; top:12px; right:12px; z-index:46; width:34px; height:34px; border-radius:8px;
+    background:var(--panel); border:1px solid var(--line); color:var(--mut); font-size:18px; cursor:pointer;
+    backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; }
+  #gear:hover { color:var(--txt); border-color:var(--acc); }
+  #gear.on { color:#03121f; background:var(--acc); border-color:var(--acc); }
+  #settings { position:fixed; top:54px; right:12px; z-index:46; width:280px; max-height:calc(100vh - 70px);
+    overflow-y:auto; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px;
+    backdrop-filter:blur(6px); display:none; }
+  #settings.open { display:block; }
+  #settings h2 { font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--mut);
+    margin:14px 0 6px; border-bottom:1px solid var(--line); padding-bottom:4px; }
+  #settings h2:first-child { margin-top:0; }
+  #settings .srow { margin:9px 0; }
+  #settings .srow > label { display:flex; justify-content:space-between; align-items:center;
+    color:var(--mut); font-size:11px; margin-bottom:3px; cursor:pointer; }
+  #settings .srow > label b { color:var(--txt); font-variant-numeric:tabular-nums; }
+  #settings .srow input[type=checkbox] { accent-color:var(--acc); width:15px; height:15px; }
+  @media (max-width:640px) { #settings { width:calc(100vw - 24px); max-width:300px; } }
 </style>
 </head>
 <body>
@@ -114,6 +132,8 @@
   </div>
 </div>
 <div id="hint">Dra for å se · rull for zoom · dra <b>🧍</b> for å stå · Gå: <b>WASD</b> · <b>Esc</b> for panel, klikk i visningen for å fortsette</div>
+<button id="gear" title="Innstillinger">⚙</button>
+<div id="settings"></div>
 <div id="joy"><div id="joyKnob"></div></div>
 <div id="info">
   <button id="infoBtn" title="Kilder og lisens">i</button>
@@ -239,6 +259,7 @@ addEventListener('keyup',   e=>keys[e.code]=false);
 // touch walk (mobile): joystick to move + drag to look, no pointer-lock
 const isTouch = matchMedia('(pointer:coarse)').matches || ('ontouchstart' in window);
 let touchWalk = false;
+let eyeH = 1.5;                 // walk-mode eye height (m), tunable in settings
 const look = new THREE.Euler(0,0,0,'YXZ');
 const joyVec = { x:0, y:0 };
 
@@ -473,7 +494,7 @@ function setMode(m){
     orbit.enabled=false;
     camera.up.set(0,1,0);
     const p = pendingStand || new THREE.Vector3(120,0,-150);
-    camera.position.set(p.x, groundY(p.x,p.z)+1.5, p.z);
+    camera.position.set(p.x, groundY(p.x,p.z)+eyeH, p.z);
     // start looking level: keep current heading, zero the pitch
     const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y = 0;
     if (fwd.lengthSq() < 1e-4) fwd.set(0,0,-1);
@@ -637,6 +658,56 @@ let playing=false, playH=0;   // playH: float minute-of-day accumulator (slider 
 const bPlay=document.getElementById('bPlay');
 bPlay.onclick=()=>{ playing=!playing; if(playing){ stopLive(); playH=+hourEl.value; } bPlay.classList.toggle('on',playing); bPlay.textContent = playing?'❚❚ Tid':'▶ Tid'; };
 
+// ---- settings panel (gear): the console tunables, in UI form ----
+const SETTINGS = [
+  { h:'Vinduer (by)' },
+  { t:'check', label:'Vinduseffekt på', get:()=>FACADE_U.uFacade.value>0.5, set:v=>FACADE_U.uFacade.value=v?1:0 },
+  { t:'range', label:'Glassrefleks',     min:0,   max:1,   step:0.01, get:()=>FACADE_U.uGlass.value,    set:v=>FACADE_U.uGlass.value=v },
+  { t:'range', label:'Blåtone glass',    min:0,   max:1,   step:0.01, get:()=>FACADE_U.uTint.value,     set:v=>FACADE_U.uTint.value=v },
+  { t:'range', label:'Veggtone',         min:0.4, max:1.2, step:0.01, get:()=>FACADE_U.uSpandrel.value, set:v=>FACADE_U.uSpandrel.value=v },
+  { t:'range', label:'Rammetone',        min:0,   max:1,   step:0.01, get:()=>FACADE_U.uFrame.value,    set:v=>FACADE_U.uFrame.value=v },
+  { t:'range', label:'Etasjehøyde (m)',  min:2,   max:5,   step:0.1,  get:()=>FACADE_U.uFloor.value,    set:v=>FACADE_U.uFloor.value=v },
+  { t:'range', label:'Vindusbredde (m)', min:1.5, max:4,   step:0.1,  get:()=>FACADE_U.uWinW.value,     set:v=>FACADE_U.uWinW.value=v },
+  { t:'range', label:'Opplyste vinduer', min:0,   max:2,   step:0.05, get:()=>(window._litScale??1),    set:v=>{ window._litScale=v; updateSun(); } },
+  { h:'Dokkhall' },
+  { t:'range', label:'Fasadegradient',   min:0,   max:2,   step:0.05, get:()=>HALL_U.uGrad.value,       set:v=>HALL_U.uGrad.value=v },
+  { t:'check', label:'Logo-plakett (mørk)', get:()=>HALL_U.uLogoOn.value>0.5, set:v=>HALL_U.uLogoOn.value=v?1:0 },
+  { t:'button', label:'Plasser logo (klikk vegg)', on:()=>window.logoPick() },
+  { t:'range', label:'Logo bredde',      min:1,   max:10,  step:0.5,  get:()=>HALL_U.uLogoR.value.x,    set:v=>HALL_U.uLogoR.value.x=v },
+  { t:'range', label:'Logo høyde',       min:1,   max:12,  step:0.5,  get:()=>HALL_U.uLogoR.value.y,    set:v=>HALL_U.uLogoR.value.y=v },
+  { h:'Visning' },
+  { t:'range', label:'Øyehøyde gå (m)',  min:1.0, max:2.0, step:0.1,  get:()=>eyeH, set:v=>eyeH=v },
+];
+(function buildSettings(){
+  const box=document.getElementById('settings');
+  for(const s of SETTINGS){
+    if(s.h){ const h=document.createElement('h2'); h.textContent=s.h; box.appendChild(h); continue; }
+    const row=document.createElement('div'); row.className='srow';
+    if(s.t==='button'){
+      const b=document.createElement('button'); b.textContent=s.label;
+      b.style.cssText='width:100%;font-size:11px;padding:6px'; b.onclick=s.on;
+      row.appendChild(b); box.appendChild(row); continue;
+    }
+    const lab=document.createElement('label');
+    if(s.t==='check'){
+      const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=s.get();
+      cb.onchange=()=>s.set(cb.checked);
+      lab.append(document.createTextNode(s.label), cb);
+      row.appendChild(lab); box.appendChild(row); continue;
+    }
+    const val=document.createElement('b'); val.textContent=(+s.get()).toFixed(2);
+    lab.append(document.createTextNode(s.label), val);
+    const r=document.createElement('input'); r.type='range'; r.min=s.min; r.max=s.max; r.step=s.step;
+    r.value=s.get(); r.style.width='100%';
+    r.oninput=()=>{ s.set(+r.value); val.textContent=(+r.value).toFixed(2); };
+    row.append(lab, r); box.appendChild(row);
+  }
+})();
+{
+  const gear=document.getElementById('gear'), sbox=document.getElementById('settings');
+  gear.onclick=()=>{ const open=sbox.classList.toggle('open'); gear.classList.toggle('on',open); };
+}
+
 // ---- loop ----
 const clock = new THREE.Clock();
 function animate(){
@@ -656,7 +727,7 @@ function animate(){
     if(touchWalk){ f += -joyVec.y; r += joyVec.x; }
     if(f) walk.moveForward(f*sp);
     if(r) walk.moveRight(r*sp);
-    camera.position.y = groundY(camera.position.x, camera.position.z)+1.5;
+    camera.position.y = groundY(camera.position.x, camera.position.z)+eyeH;
   } else if (mode==='orbit'){ orbit.update(); }
   syncURL(dt);                 // keep the URL in sync so bookmarks/links capture this view
   renderer.render(scene, camera);
