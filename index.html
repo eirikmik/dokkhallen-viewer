@@ -307,15 +307,19 @@ function makeFacade(){
   };
   return m;
 }
-// Dokkhallen cladding: matte near-black roof + light blue-grey "pixel" panel mosaic on the walls
+// Dokkhallen cladding: matte near-black roof + light blue-grey "pixel" panel mosaic on the
+// walls, with a vertical gradient (deeper blue-grey low, fading to near-white at the top).
+const HALL_U = { uY0:{value:0}, uY1:{value:50}, uGrad:{value:1.0},
+  uLogoOn:{value:0}, uLogoC:{value:new THREE.Vector3(23,10,-1)}, uLogoR:{value:new THREE.Vector2(4.5,5.5)} };
 function makeHall(){
-  const m = new THREE.MeshStandardMaterial({ color:0xffffff, roughness:0.86, metalness:0.0 });
+  const m = new THREE.MeshStandardMaterial({ color:0xffffff, roughness:0.86, metalness:0.0, side:THREE.DoubleSide });
   m.onBeforeCompile = (sh)=>{
+    Object.assign(sh.uniforms, HALL_U);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vHP; varying vec3 vHN;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n vHP=(modelMatrix*vec4(transformed,1.0)).xyz; vHN=mat3(modelMatrix)*objectNormal;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vHP; varying vec3 vHN;\nfloat h21(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vHP; varying vec3 vHN;\nuniform float uY0,uY1,uGrad,uLogoOn;\nuniform vec3 uLogoC;\nuniform vec2 uLogoR;\nfloat h21(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}')
       .replace('#include <color_fragment>', `#include <color_fragment>
       { vec3 n=normalize(vHN);
         if (abs(n.y) > 0.5){
@@ -324,19 +328,49 @@ function makeHall(){
           float hc = abs(n.x) > abs(n.z) ? vHP.z : vHP.x;      // coordinate along the wall
           vec2 cell = vec2(floor(hc/2.4), floor(vHP.y/1.6));   // ~2.4 x 1.6 m panels
           float r = h21(cell), r2 = h21(cell+37.3);
-          vec3 paleBlue = vec3(0.50,0.63,0.78);
           vec3 white    = vec3(0.82,0.85,0.88);
+          vec3 paleBlue = vec3(0.50,0.63,0.78);
           vec3 grey     = vec3(0.58,0.63,0.69);
-          vec3 col = white;
-          col = mix(col, paleBlue, smoothstep(0.45,0.95,r));   // scattered blue panels
-          col = mix(col, grey, smoothstep(0.82,1.0,r2)*0.7);   // a few greys
-          col *= 0.93 + 0.12*r2;                               // subtle per-panel tone
+          // share of darker (tinted) panels vs height: ~all dark in the bottom 1/4,
+          // ramp through the middle, ~5% (95% white) once past the top third.
+          float t = clamp((vHP.y - uY0) / max(1.0, uY1 - uY0), 0.0, 1.0);
+          float pTint = mix(0.97, 0.05, smoothstep(0.25, 0.667, t)) * uGrad;
+          vec3 tint = mix((r2 < 0.5 ? paleBlue : grey), white, t*0.45);  // upper tints fade paler
+          vec3 col = (r < pTint) ? tint*(0.90+0.18*r2) : white*(0.96+0.06*r2);
+          // dark logo plaque: vertical box on the wall around uLogoC (horizontal radius x, half-height y)
+          if (uLogoOn > 0.5 && length(vHP.xz - uLogoC.xz) < uLogoR.x && abs(vHP.y - uLogoC.y) < uLogoR.y)
+            col = vec3(0.05, 0.055, 0.065);
           diffuseColor.rgb = col;
         }
       }`);
   };
   return m;
 }
+// quick console tuner:  tuneHall({grad:1.2})  (scales density of darker panels; 0 = all white)
+window.tuneHall = (o={})=>{ if(o.grad!=null) HALL_U.uGrad.value=o.grad; console.log('hall grad', HALL_U.uGrad.value, 'y', HALL_U.uY0.value.toFixed(1), HALL_U.uY1.value.toFixed(1)); };
+// dark logo plaque on the wall:  logoPick() then click the logo;  tuneLogo({rh:4.5, rv:5.5, on:1})
+window.tuneLogo = (o={})=>{
+  if(o.on!=null) HALL_U.uLogoOn.value=o.on?1:0;
+  if(o.x!=null) HALL_U.uLogoC.value.x=o.x;
+  if(o.y!=null) HALL_U.uLogoC.value.y=o.y;
+  if(o.z!=null) HALL_U.uLogoC.value.z=o.z;
+  if(o.rh!=null) HALL_U.uLogoR.value.x=o.rh;
+  if(o.rv!=null) HALL_U.uLogoR.value.y=o.rv;
+  const c=HALL_U.uLogoC.value, r=HALL_U.uLogoR.value;
+  console.log(`logo on=${HALL_U.uLogoOn.value}  center=(${c.x.toFixed(2)}, ${c.y.toFixed(2)}, ${c.z.toFixed(2)})  rh=${r.x} rv=${r.y}`);
+};
+window.logoPick = ()=>{                 // next viewport click pins the plaque to the clicked point
+  const h=(e)=>{
+    renderer.domElement.removeEventListener('click', h, true);
+    const r=renderer.domElement.getBoundingClientRect();
+    ray.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1), camera);
+    const hit = proposal ? ray.intersectObject(proposal, true) : [];
+    if(hit.length){ HALL_U.uLogoC.value.copy(hit[0].point); HALL_U.uLogoOn.value=1; window.tuneLogo({}); }
+    else console.log('no hit — click directly on the hall');
+  };
+  renderer.domElement.addEventListener('click', h, true);
+  console.log('click the logo on the wall…');
+};
 window.tuneWindows = (o={})=>{
   const map={glass:'uGlass',tint:'uTint',spandrel:'uSpandrel',win:'uWin',floor:'uFloor',winW:'uWinW',frame:'uFrame'};
   for(const k in o){ if(map[k]) FACADE_U[map[k]].value=o[k]; }
@@ -361,6 +395,11 @@ gltfLoader.load('scene.glb', (g)=>{
     }
   });
   scene.add(g.scene);
+  if (proposal){             // span the cladding gradient over the hall's real base->top
+    proposal.updateWorldMatrix(true, true);
+    const bb = new THREE.Box3().setFromObject(proposal);
+    HALL_U.uY0.value = bb.min.y; HALL_U.uY1.value = bb.max.y;
+  }
   document.getElementById('load').remove();
   updateSun();
   restoreFromURL();          // jump to a shared/bookmarked view if ?v= is present
