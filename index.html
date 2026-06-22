@@ -79,7 +79,10 @@
     <label>Klokkeslett (<span id="tz">CET</span>) <b id="tLbl">13:00</b></label>
     <input id="hour" type="range" min="0" max="1439" value="780"/>
   </div>
-  <button id="bNow" style="margin-top:2px;padding:5px 12px;font-size:11px">↻ Nå</button>
+  <div style="display:flex;gap:6px;margin-top:2px">
+    <button id="bNow" style="flex:none;padding:5px 12px;font-size:11px">↻ Nå</button>
+    <button id="bSpin" style="flex:none;padding:5px 12px;font-size:11px">⟳ Roter</button>
+  </div>
   <div class="readout">
     <div class="chip"><span>SOLHØYDE</span><b id="elv">–</b></div>
     <div class="chip"><span>ASIMUT</span><b id="azm">–</b></div>
@@ -371,7 +374,7 @@ function updateSun(){
   const warm = THREE.MathUtils.clamp(1-(el/10), 0, 1);  // redden near horizon
   sun.color.setRGB(1, 1-0.32*warm, 1-0.6*warm);
 }
-dayEl.oninput = updateSun; hourEl.oninput = updateSun;
+dayEl.oninput = ()=>{ stopLive(); updateSun(); }; hourEl.oninput = ()=>{ stopLive(); updateSun(); };
 
 // stand point is set only by dropping the Pegman (click-to-walk disabled)
 let pendingStand = null;
@@ -509,8 +512,20 @@ peg.addEventListener('pointerup',(e)=>{
   if(hit.length){ pendingStand = hit[0].point.clone(); setMode('walk'); }
 });
 
-// ---- reset date/time to now (keeps the current view) ----
-document.getElementById('bNow').onclick=()=>{ setNow(); updateSun(); };
+// ---- "Nå": reset date/time to now, then keep it live (keeps the current view) ----
+const bNow=document.getElementById('bNow'), bSpin=document.getElementById('bSpin');
+let liveNow=false, autoOrbit=false;
+function stopLive(){ liveNow=false; bNow.classList.remove('on'); }
+bNow.onclick=()=>{
+  liveNow=!liveNow; bNow.classList.toggle('on', liveNow);
+  if (liveNow){ if(playing){ playing=false; bPlay.classList.remove('on'); bPlay.textContent='▶ Dag'; }
+    setNow(); updateSun(); }
+};
+setInterval(()=>{ if(liveNow){ setNow(); updateSun(); } }, 20000);  // tick toward real time
+
+// ---- "Roter": slowly auto-orbit the framed vantage point (orbit mode) ----
+orbit.autoRotateSpeed = 0.5;     // ~2 min per revolution
+bSpin.onclick=()=>{ autoOrbit=!autoOrbit; bSpin.classList.toggle('on', autoOrbit); orbit.autoRotate=autoOrbit; };
 
 // ---- share current view ----
 const bShare=document.getElementById('bShare');
@@ -524,7 +539,8 @@ bShare.onclick=()=>{
 
 // ---- play day ----
 let playing=false;
-document.getElementById('bPlay').onclick=(e)=>{ playing=!playing; e.target.classList.toggle('on',playing); e.target.textContent = playing?'❚❚ Dag':'▶ Dag'; };
+const bPlay=document.getElementById('bPlay');
+bPlay.onclick=()=>{ playing=!playing; if(playing) stopLive(); bPlay.classList.toggle('on',playing); bPlay.textContent = playing?'❚❚ Dag':'▶ Dag'; };
 
 // ---- loop ----
 const clock = new THREE.Clock();
