@@ -25,6 +25,12 @@
   .chip span { display:block; color:var(--mut); font-size:10px; letter-spacing:.04em; }
   .chip b { font-size:15px; font-variant-numeric:tabular-nums; }
   #pegman:hover { border-color:var(--acc); }
+  .hr { height:1px; background:var(--line); margin:12px 0; }
+  .azwrap { display:flex; align-items:center; justify-content:center; gap:6px; }
+  .dial { position:relative; width:13px; height:13px; border-radius:50%; border:1px solid var(--line); flex:none; }
+  .dial::before { content:''; position:absolute; left:50%; top:0; width:1px; height:2px; background:var(--mut); transform:translateX(-50%); } /* nord */
+  .dial i { position:absolute; left:50%; top:1.5px; width:2px; height:5px; margin-left:-1px;
+    background:var(--acc); border-radius:1px; transform-origin:50% 100%; transition:transform .2s; }
   .btns { display:flex; gap:6px; margin-top:12px; }
   button { flex:1; background:#222b36; color:var(--txt); border:1px solid var(--line);
     border-radius:7px; padding:8px; cursor:pointer; font-size:12px; }
@@ -82,19 +88,22 @@
   </div>
   <div style="display:flex;gap:6px;margin-top:6px">
     <button id="bNow" style="flex:1;padding:6px;font-size:11px">↻ Nå</button>
-    <button id="bSpin" style="flex:1;padding:6px;font-size:11px">⟳ Roter</button>
+    <button id="bPlay" style="flex:1;padding:6px;font-size:11px">▶ Dag</button>
   </div>
   <div class="readout">
     <div class="chip"><span>SOLHØYDE</span><b id="elv">–</b></div>
-    <div class="chip"><span>ASIMUT</span><b id="azm">–</b></div>
+    <div class="chip"><span>ASIMUT</span>
+      <div class="azwrap"><b id="azm">–</b><span id="azDial" class="dial"><i></i></span></div>
+    </div>
   </div>
+  <div class="hr"></div>
   <label style="display:flex;align-items:center;gap:8px;margin:10px 0 2px;cursor:pointer;color:var(--txt);font-size:12px">
     <input id="toggle" type="checkbox" checked style="accent-color:var(--acc);width:15px;height:15px"/> Vis foreslått dokkhall</label>
   <label style="display:flex;align-items:center;gap:8px;margin:4px 0 2px;cursor:pointer;color:var(--txt);font-size:12px">
     <input id="hard" type="checkbox" style="accent-color:var(--acc);width:15px;height:15px"/> Harde skygger</label>
   <div class="btns">
     <button id="bOrbit" class="on">Oversikt</button>
-    <button id="bPlay">▶ Dag</button>
+    <button id="bSpin">⟳ Roter</button>
   </div>
   <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
     <div id="pegman" title="Dra ut på kartet for å stå der (1,5 m)" style="font-size:22px;line-height:1;cursor:grab;user-select:none;touch-action:none;padding:5px 8px;background:#0f141b;border:1px solid var(--line);border-radius:8px">🧍</div>
@@ -332,6 +341,7 @@ gltfLoader.load('city_colored.glb', (g)=>{
 
 // ---- sun update from UI ----
 const dayEl=document.getElementById('day'), hourEl=document.getElementById('hour');
+const azNeedle=document.querySelector('#azDial i');   // mini compass needle (points at sun azimuth, N up)
 // set date+time to Harstad's current wall-clock (CET/CEST)
 function setNow(){
   const now = new Date();
@@ -352,6 +362,8 @@ function updateSun(){
   const {az,el} = sunAzEl(2025, mo, da, hod);
   document.getElementById('elv').textContent = el.toFixed(0)+'°';
   document.getElementById('azm').textContent = az.toFixed(0)+'°';
+  if (azNeedle) azNeedle.style.transform = 'rotate('+az+'deg)';   // N up, sweeps clockwise
+  if (azNeedle) azNeedle.style.opacity = el > -2 ? 1 : 0.25;      // fade when sun is down
   // direction toward sun in three (E=+x, up=+y, north=-z)
   const e=el*Math.PI/180, a=az*Math.PI/180;
   const dir = new THREE.Vector3(Math.cos(e)*Math.sin(a), Math.sin(e), -Math.cos(e)*Math.cos(a));
