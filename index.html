@@ -53,6 +53,15 @@
   #joyKnob { position:absolute; left:50%; top:50%; width:48px; height:48px; border-radius:50%;
     background:rgba(120,165,215,.9); border:1px solid var(--acc); transform:translate(-50%,-50%);
     pointer-events:none; }
+  #info { position:fixed; right:12px; bottom:12px; z-index:45; }
+  #infoBtn { width:26px; height:26px; border-radius:50%; border:1px solid var(--line); padding:0;
+    background:rgba(20,26,34,.6); color:var(--mut); font:italic 700 14px Georgia,serif;
+    cursor:pointer; backdrop-filter:blur(3px); line-height:24px; }
+  #infoBtn:hover { color:var(--txt); border-color:var(--acc); }
+  #infoBox { display:none; position:absolute; right:0; bottom:34px; width:250px;
+    background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 12px;
+    color:var(--mut); font-size:11px; line-height:1.55; }
+  #info.open #infoBox { display:block; }
 </style>
 </head>
 <body>
@@ -91,11 +100,22 @@
 </div>
 <div id="hint">Dra for å se · rull for zoom · dra <b>🧍</b> for å stå · Gå: <b>WASD</b> · <b>Esc</b> for panel, klikk i visningen for å fortsette</div>
 <div id="joy"><div id="joyKnob"></div></div>
+<div id="info">
+  <button id="infoBtn" title="Kilder og lisens">i</button>
+  <div id="infoBox">
+    <b style="color:var(--txt)">Datakilder</b><br>
+    Bygninger og ortofoto: © Geodata AS, Kartverket, Geovekst og kommunene<br>
+    Høydedata: © Kartverket (CC BY 4.0)
+  </div>
+</div>
 <script>
   (function(){
     const ui = document.getElementById('ui');
     document.getElementById('uiHdr').addEventListener('click', () => ui.classList.toggle('collapsed'));
     if (window.innerWidth < 640) ui.classList.add('collapsed');
+    const info = document.getElementById('info');
+    document.getElementById('infoBtn').addEventListener('click', e => { e.stopPropagation(); info.classList.toggle('open'); });
+    document.addEventListener('click', e => { if(!info.contains(e.target)) info.classList.remove('open'); });
   })();
 </script>
 
