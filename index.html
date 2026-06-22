@@ -79,6 +79,7 @@
     <label>Klokkeslett (<span id="tz">CET</span>) <b id="tLbl">13:00</b></label>
     <input id="hour" type="range" min="0" max="1439" value="780"/>
   </div>
+  <button id="bNow" style="margin-top:2px;padding:5px 12px;font-size:11px">↻ Nå</button>
   <div class="readout">
     <div class="chip"><span>SOLHØYDE</span><b id="elv">–</b></div>
     <div class="chip"><span>ASIMUT</span><b id="azm">–</b></div>
@@ -328,8 +329,8 @@ gltfLoader.load('city_colored.glb', (g)=>{
 
 // ---- sun update from UI ----
 const dayEl=document.getElementById('day'), hourEl=document.getElementById('hour');
-// open at Harstad's current wall-clock (CET/CEST), not a fixed date
-(function initNow(){
+// set date+time to Harstad's current wall-clock (CET/CEST)
+function setNow(){
   const now = new Date();
   const offH = euOffset(now.getUTCFullYear(), now.getUTCMonth()+1, now.getUTCDate());
   const loc = new Date(now.getTime() + offH*3600000);   // shift so UTC fields read as Harstad local
@@ -337,7 +338,8 @@ const dayEl=document.getElementById('day'), hourEl=document.getElementById('hour
                         - Date.UTC(loc.getUTCFullYear(), 0, 1)) / 86400000);
   dayEl.value = Math.max(0, Math.min(364, doy));
   hourEl.value = loc.getUTCHours()*60 + loc.getUTCMinutes();
-})();
+}
+setNow();   // open at the current date/time (a ?v= link overrides this on load)
 function updateSun(){
   const [mo,da] = doyToMD(+dayEl.value);
   const hod = (+hourEl.value)/60;
@@ -506,6 +508,9 @@ peg.addEventListener('pointerup',(e)=>{
   const hit = ray.intersectObjects(terrains, true);
   if(hit.length){ pendingStand = hit[0].point.clone(); setMode('walk'); }
 });
+
+// ---- reset date/time to now (keeps the current view) ----
+document.getElementById('bNow').onclick=()=>{ setNow(); updateSun(); };
 
 // ---- share current view ----
 const bShare=document.getElementById('bShare');
