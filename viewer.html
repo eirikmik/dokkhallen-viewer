@@ -325,6 +325,16 @@ gltfLoader.load('city_colored.glb', (g)=>{
 
 // ---- sun update from UI ----
 const dayEl=document.getElementById('day'), hourEl=document.getElementById('hour');
+// open at Harstad's current wall-clock (CET/CEST), not a fixed date
+(function initNow(){
+  const now = new Date();
+  const offH = euOffset(now.getUTCFullYear(), now.getUTCMonth()+1, now.getUTCDate());
+  const loc = new Date(now.getTime() + offH*3600000);   // shift so UTC fields read as Harstad local
+  const doy = Math.round((Date.UTC(loc.getUTCFullYear(), loc.getUTCMonth(), loc.getUTCDate())
+                        - Date.UTC(loc.getUTCFullYear(), 0, 1)) / 86400000);
+  dayEl.value = Math.max(0, Math.min(364, doy));
+  hourEl.value = loc.getUTCHours()*60 + loc.getUTCMinutes();
+})();
 function updateSun(){
   const [mo,da] = doyToMD(+dayEl.value);
   const hod = (+hourEl.value)/60;
