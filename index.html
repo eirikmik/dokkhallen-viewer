@@ -148,6 +148,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 const LAT = 68.7970, LON = 16.5427;
+// private visit ping (fire-and-forget; counted server-side, nothing shown here)
+try { fetch('https://g3d.brattkart.online/count', {mode:'no-cors', cache:'no-store'}); } catch(e){}
 // Norway timezone incl. EU DST: CET (+1) standard, CEST (+2) last Sun Mar .. last Sun Oct
 function euOffset(y, mo, da){
   const lastSun = (m)=>{ const d=new Date(Date.UTC(y, m+1, 0)); return d.getUTCDate()-d.getUTCDay(); };
@@ -204,8 +206,9 @@ const hemi = new THREE.HemisphereLight(0x9bb4d6, 0x40434a, 0.6);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 3.0);
 sun.castShadow = true;
-sun.shadow.mapSize.set(4096, 4096);
-const S = 750;
+const _touch = matchMedia('(pointer:coarse)').matches || ('ontouchstart' in window);
+sun.shadow.mapSize.set(_touch?4096:8192, _touch?4096:8192);  // bigger map keeps the wider area crisp on desktop
+const S = 1400;   // shadow-area radius (m): covers surrounding buildings + long low-sun shadows (was 750)
 Object.assign(sun.shadow.camera, { left:-S, right:S, top:S, bottom:-S, near:1, far:4000 });
 sun.shadow.bias = -0.0004;
 sun.shadow.radius = 3;     // default soft; tightened when 'Harde skygger' is on
@@ -323,7 +326,7 @@ gltfLoader.load('scene.glb', (g)=>{
       if (mats.some(m=>m && m.map)) {          // terrain (multi-material ortho)
         terrains.push(o); mats.forEach(m=>{ if(m) m.roughness = 0.95; });
       } else {                                  // the non-terrain mesh = the hall
-        proposal = o; if(o.material) o.material.roughness = 0.92;
+        proposal = o; if(o.material){ o.material.roughness = 0.92; o.material.color.set('#8c8175'); } // warm grey-brown cladding
       }
     }
   });
@@ -394,6 +397,7 @@ let pendingStand = null;
 // ---- mode switching ----
 const bOrbit=document.getElementById('bOrbit');
 function setMode(m){
+  const prev = mode;
   mode=m;
   bOrbit.classList.toggle('on', m==='orbit');
   if (m==='walk'){
@@ -413,13 +417,24 @@ function setMode(m){
     } else {
       walk.lock();
     }
-  } else {                                  // orbit: fully reset to the overview
+  } else {                                  // orbit
     touchWalk = false; joy.style.display = 'none';
     joyVec.x = joyVec.y = 0; joyKnob.style.transform = 'translate(-50%,-50%)';
     if(walk.isLocked) walk.unlock();
     camera.up.set(0,1,0);
-    camera.position.set(280, 260, 360);
-    orbit.target.set(0, 10, 0);
+    if (prev==='walk'){                      // rise straight up over the current spot, keep heading, tilt down
+      const px=camera.position.x, pz=camera.position.z, gy=groundY(px,pz);
+      const fwd=new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y=0;
+      if (fwd.lengthSq()<1e-4) fwd.set(0,0,-1);
+      fwd.normalize();
+      const UP=100, PITCH=40*Math.PI/180;    // metres up, downward tilt
+      camera.position.set(px, gy+UP, pz);
+      const dir=new THREE.Vector3(fwd.x*Math.cos(PITCH), -Math.sin(PITCH), fwd.z*Math.cos(PITCH));
+      orbit.target.copy(camera.position).addScaledVector(dir, UP/Math.sin(PITCH));  // ground point ahead
+    } else {                                 // from orbit: full reset to the wide home overview
+      camera.position.set(280, 260, 360);
+      orbit.target.set(0, 10, 0);
+    }
     orbit.enabled=true; orbit.update();
   }
 }
@@ -460,7 +475,7 @@ addEventListener('pointerup', e=>{ if(e.pointerId===lookId) lookId=null; });
 document.getElementById('toggle').onchange = (e)=>{ if(proposal) proposal.visible = e.target.checked; };
 document.getElementById('hard').onchange = (e)=>{
   window._hardShadows = e.target.checked;
-  const S = window._hardShadows ? 450 : 750;     // tighter frustum = sharper shadows
+  const S = window._hardShadows ? 450 : 1400;    // tight+crisp for detail, wide for impact study
   Object.assign(sun.shadow.camera, {left:-S, right:S, top:S, bottom:-S});
   sun.shadow.camera.updateProjectionMatrix();
   sun.shadow.radius = window._hardShadows ? 1 : 3;
