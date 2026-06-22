@@ -277,7 +277,8 @@ function groundY(x, z){
 // live-tunable:  tuneWindows({glass:0.85, tint:0.25, spandrel:0.96, win:1, floor:3.3, winW:2.6, frame:0.55})
 const FACADE_U = {
   uGlass:{value:0.85}, uTint:{value:0.26}, uSpandrel:{value:0.96}, uWin:{value:1.0},
-  uFloor:{value:3.3}, uWinW:{value:2.6}, uFrame:{value:0.5}, uLitFrac:{value:0.0}, uFacade:{value:1.0}
+  uFloor:{value:3.3}, uWinW:{value:2.6}, uFrame:{value:0.5}, uLitFrac:{value:0.0}, uFacade:{value:1.0},
+  uSat:{value:1.0}, uBright:{value:1.0}   // live tweak on top of the baked vertex colours
 };
 // master on/off for the whole window effect:  windows(false) / windows(true)
 window.windows = (on=true)=>{ FACADE_U.uFacade.value = on?1:0; console.log('windows', on?'ON':'OFF'); };
@@ -289,8 +290,10 @@ function makeFacade(){
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNrm;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n vWPos=(modelMatrix*vec4(transformed,1.0)).xyz; vWNrm=mat3(modelMatrix)*objectNormal;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNrm;\nuniform float uGlass,uTint,uSpandrel,uWin,uFloor,uWinW,uFrame,uLitFrac,uFacade;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNrm;\nuniform float uGlass,uTint,uSpandrel,uWin,uFloor,uWinW,uFrame,uLitFrac,uFacade,uSat,uBright;')
       .replace('#include <color_fragment>', `#include <color_fragment>
+      // saturation/brightness on the baked building colour (feeds the facade tones below)
+      diffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(0.2126,0.7152,0.0722))), diffuseColor.rgb, uSat) * uBright;
       float gGlass=0.0, gLit=0.0; vec3 gLitCol=vec3(0.0);
       { vec3 n=normalize(vWNrm);
         float vert=1.0-smoothstep(0.25,0.45,abs(n.y));   // 1 on walls, 0 on roofs
@@ -474,7 +477,7 @@ function updateSun(){
   // angles), only dimming through twilight as it drops below the horizon.
   const day = THREE.MathUtils.clamp((el+6)/8, 0, 1);   // 0 at el<=-6, 1 at el>=2
   sun.intensity = (el>0 ? (1.7 + 1.5*up) : 0.0) * (window._hardShadows ? 1.25 : 1.0);  // strong when sun up
-  hemi.intensity = (0.12 + 1.05*day) * (window._hardShadows ? 0.16 : 1.0);   // cut ambient -> darker shadows
+  hemi.intensity = (0.12 + 1.05*day) * (window._hardShadows ? 0.16 : 1.0) * (window._ambScale ?? 1);   // ambient (lower = darker shadows)
   sky.setRGB(0.05+0.45*day, 0.08+0.55*day, 0.13+0.66*day).convertSRGBToLinear();
   const warm = THREE.MathUtils.clamp(1-(el/10), 0, 1);  // redden near horizon
   sun.color.setRGB(1, 1-0.32*warm, 1-0.6*warm);
@@ -669,15 +672,24 @@ const SETTINGS = [
   { t:'range', label:'Etasjehøyde (m)',  min:2,   max:5,   step:0.1,  get:()=>FACADE_U.uFloor.value,    set:v=>FACADE_U.uFloor.value=v },
   { t:'range', label:'Vindusbredde (m)', min:1.5, max:4,   step:0.1,  get:()=>FACADE_U.uWinW.value,     set:v=>FACADE_U.uWinW.value=v },
   { t:'range', label:'Opplyste vinduer', min:0,   max:2,   step:0.05, get:()=>(window._litScale??1),    set:v=>{ window._litScale=v; updateSun(); } },
+  { h:'Bygningsfarge (by)' },
+  { t:'range', label:'Metning',          min:0,   max:2,   step:0.05, get:()=>FACADE_U.uSat.value,      set:v=>FACADE_U.uSat.value=v },
+  { t:'range', label:'Lysstyrke',        min:0.4, max:1.8, step:0.05, get:()=>FACADE_U.uBright.value,   set:v=>FACADE_U.uBright.value=v },
   { h:'Dokkhall' },
   { t:'range', label:'Fasadegradient',   min:0,   max:2,   step:0.05, get:()=>HALL_U.uGrad.value,       set:v=>HALL_U.uGrad.value=v },
   { t:'check', label:'Logo-plakett (mørk)', get:()=>HALL_U.uLogoOn.value>0.5, set:v=>HALL_U.uLogoOn.value=v?1:0 },
   { t:'button', label:'Plasser logo (klikk vegg)', on:()=>window.logoPick() },
   { t:'range', label:'Logo bredde',      min:1,   max:10,  step:0.5,  get:()=>HALL_U.uLogoR.value.x,    set:v=>HALL_U.uLogoR.value.x=v },
   { t:'range', label:'Logo høyde',       min:1,   max:12,  step:0.5,  get:()=>HALL_U.uLogoR.value.y,    set:v=>HALL_U.uLogoR.value.y=v },
+  { h:'Skygger' },
+  { t:'range', label:'Skyggeområde (m)', min:300, max:2500, step:50, get:()=>sun.shadow.camera.right,
+    set:v=>{ Object.assign(sun.shadow.camera,{left:-v,right:v,top:v,bottom:-v}); sun.shadow.camera.updateProjectionMatrix(); } },
+  { t:'range', label:'Skyggemykhet',     min:0,   max:8,   step:0.5,  get:()=>sun.shadow.radius,        set:v=>sun.shadow.radius=v },
+  { t:'range', label:'Omgivelseslys',    min:0,   max:1.5, step:0.05, get:()=>(window._ambScale??1),    set:v=>{ window._ambScale=v; updateSun(); } },
   { h:'Visning' },
   { t:'range', label:'Øyehøyde gå (m)',  min:1.0, max:2.0, step:0.1,  get:()=>eyeH, set:v=>eyeH=v },
 ];
+const _refreshSettings=[];
 (function buildSettings(){
   const box=document.getElementById('settings');
   for(const s of SETTINGS){
@@ -693,7 +705,8 @@ const SETTINGS = [
       const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=s.get();
       cb.onchange=()=>s.set(cb.checked);
       lab.append(document.createTextNode(s.label), cb);
-      row.appendChild(lab); box.appendChild(row); continue;
+      row.appendChild(lab); box.appendChild(row);
+      _refreshSettings.push(()=>{ cb.checked=s.get(); }); continue;
     }
     const val=document.createElement('b'); val.textContent=(+s.get()).toFixed(2);
     lab.append(document.createTextNode(s.label), val);
@@ -701,11 +714,13 @@ const SETTINGS = [
     r.value=s.get(); r.style.width='100%';
     r.oninput=()=>{ s.set(+r.value); val.textContent=(+r.value).toFixed(2); };
     row.append(lab, r); box.appendChild(row);
+    _refreshSettings.push(()=>{ r.value=s.get(); val.textContent=(+s.get()).toFixed(2); });
   }
 })();
 {
   const gear=document.getElementById('gear'), sbox=document.getElementById('settings');
-  gear.onclick=()=>{ const open=sbox.classList.toggle('open'); gear.classList.toggle('on',open); };
+  gear.onclick=()=>{ const open=sbox.classList.toggle('open'); gear.classList.toggle('on',open);
+    if(open) _refreshSettings.forEach(f=>f()); };   // sync sliders to current state on open
 }
 
 // ---- loop ----
