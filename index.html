@@ -131,7 +131,12 @@
   #toast{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:60;
     background:rgba(13,17,23,.92); border:1px solid var(--line); color:var(--txt);
     padding:8px 14px; border-radius:8px; font-size:12px; display:none; max-width:80vw; text-align:center; }
-  @media (pointer:coarse){ #geoHud{ left:50%; transform:translateX(-50%); bottom:96px; } }
+  #addrNow{ position:fixed; right:12px; bottom:46px; z-index:45; display:none;
+    background:rgba(13,17,23,.85); border:1px solid var(--line); color:var(--mut);
+    padding:5px 10px; border-radius:8px; font-size:12px; max-width:60vw; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; backdrop-filter:blur(3px); }
+  @media (pointer:coarse){ #geoHud{ left:50%; transform:translateX(-50%); bottom:96px; }
+    #addrNow{ top:12px; bottom:auto; right:12px; } }
 </style>
 </head>
 <body>
@@ -207,6 +212,7 @@
 <div id="geoHud"><label>Høyde over bakken <b id="geoHval">1,6 m</b></label>
   <input id="geoHsl" type="range" min="0" max="30" step="0.5" value="1.6"></div>
 <div id="toast"></div>
+<div id="addrNow"></div>
 <button id="gear" title="Innstillinger">⚙</button>
 <div id="settings"></div>
 <div id="joy"><div id="joyKnob"></div></div>
@@ -250,6 +256,11 @@ function lonLatToLocal(lon, lat){
   return { x: E - OE, z: -(N - ON) };           // viewer frame x=E, z=-N
 }
 window.lonLatToLocal = lonLatToLocal;
+function localToLonLat(x, z){                    // inverse: viewer local -> WGS84 [lon,lat]
+  const [lon, lat] = proj4('EPSG:25833', 'EPSG:4326', [x + OE, ON - z]);
+  return [lon, lat];
+}
+window.localToLonLat = localToLonLat;
 
 const LAT = 68.7970, LON = 16.5427;
 // private visit ping (fire-and-forget; counted server-side, nothing shown here)
@@ -958,19 +969,25 @@ function viewToStr(){
   else t = orbit.target;
   return [ mode==='walk'?1:0, Math.round(+dayEl.value), Math.round(+hourEl.value),
     document.getElementById('toggle').checked?1:0, document.getElementById('hard').checked?1:0,
-    R1(p.x),R1(p.y),R1(p.z), R1(t.x),R1(t.y),R1(t.z) ].join(',');
+    R1(p.x),R1(p.y),R1(p.z), R1(t.x),R1(t.y),R1(t.z),
+    R1(mode==='walk'?walkH:eyeH) ].join(',');     // 12th: above-ground height (walk)
 }
 function applyViewStr(s){
   const a=(s||'').split(',').map(Number);
   if (a.length<11 || a.some(n=>!isFinite(n))) return false;
   const [wk,day,hr,prop,hard,px,py,pz,tx,ty,tz]=a;
+  const wh = (a.length>11 && isFinite(a[11])) ? a[11] : eyeH;   // above-ground height (older links omit)
   dayEl.value=day; hourEl.value=hr;
   const tog=document.getElementById('toggle'); tog.checked=!!prop; if(proposal) proposal.visible=!!prop;
   const hd=document.getElementById('hard'); if(!!hard!==hd.checked){ hd.checked=!!hard; hd.onchange({target:hd}); }
   if (wk){
+    pendingWalkH = wh;                                          // restore the eye height
     pendingStand = new THREE.Vector3(px,py,pz); setMode('walk');
     camera.position.set(px,py,pz); camera.lookAt(tx,ty,tz);
     look.setFromQuaternion(camera.quaternion); look.z=0;
+    geoH = wh; const gsl=document.getElementById('geoHsl'), gv=document.getElementById('geoHval');
+    if (gsl){ gsl.value=String(wh); gv.textContent = wh.toFixed(1).replace('.', ',') + ' m'; }
+    if (GEO_ON) showGeoHud(true);
   } else {
     setMode('orbit');
     camera.position.set(px,py,pz); orbit.target.set(tx,ty,tz); orbit.update();
@@ -1015,12 +1032,42 @@ function showGeoHud(on){ document.getElementById('geoHud').style.display = on ? 
 (function(){                                  // above-ground height HUD slider
   const sl = document.getElementById('geoHsl'), out = document.getElementById('geoHval');
   sl.value = String(geoH); out.textContent = geoH.toFixed(1).replace('.', ',') + ' m';
-  sl.addEventListener('input', ()=>{ geoH = +sl.value; if (mode === 'walk') walkH = geoH;
-    out.textContent = geoH.toFixed(1).replace('.', ',') + ' m'; });
+  sl.addEventListener('input', ()=>{ geoH = +sl.value; out.textContent = geoH.toFixed(1).replace('.', ',') + ' m';
+    if (mode === 'walk'){ walkH = geoH;                       // apply live, even when pointer is unlocked
+      camera.position.y = groundY(camera.position.x, camera.position.z) + walkH; } });
 })();
 window.showGeoHud = showGeoHud;
 
-function goToAddress(lon, lat){
+// live "approximate address" readout while walking — reverse-geocode, throttled hard so the
+// API is hit only when you've moved >20 m from the last lookup AND paused ~0.7 s.
+let addrQueried = new THREE.Vector3(Infinity, 0, Infinity);   // last position reverse-geocoded
+let addrPrev = new THREE.Vector3(); let addrIdle = 0, addrInFlight = false;
+const ADDR_MOVE = 20, ADDR_SETTLE = 0.7;
+async function reverseGeocode(lon, lat){
+  const url = 'https://ws.geonorge.no/adresser/v1/punktsok?lat=' + lat + '&lon=' + lon
+    + '&radius=50&treffPerSide=1&utkoordsys=4326';
+  const r = await fetch(url); if (!r.ok) throw new Error('punktsok ' + r.status);
+  const d = await r.json(); const a = (d.adresser || [])[0];
+  return a ? a.adressetekst + (a.poststed ? ', ' + a.poststed : '') : null;
+}
+function tickAddress(dt){
+  if (!GEO_ON) return;
+  const el = document.getElementById('addrNow');
+  if (mode !== 'walk'){ if (el.style.display !== 'none') el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const cx = camera.position.x, cz = camera.position.z;
+  const frameMove = Math.hypot(cx - addrPrev.x, cz - addrPrev.z); addrPrev.set(cx, 0, cz);
+  addrIdle = frameMove > 0.05 ? 0 : addrIdle + dt;             // reset idle while moving
+  const fromQ = Math.hypot(cx - addrQueried.x, cz - addrQueried.z);
+  if (!addrInFlight && fromQ > ADDR_MOVE && addrIdle > ADDR_SETTLE){
+    addrInFlight = true; addrQueried.set(cx, 0, cz);
+    const [lon, lat] = localToLonLat(cx, cz);
+    reverseGeocode(lon, lat).then(txt=>{ el.textContent = txt ? '≈ ' + txt : ''; })
+      .catch(()=>{}).finally(()=>{ addrInFlight = false; });
+  }
+}
+
+function goToAddress(lon, lat, label){
   const loc = lonLatToLocal(lon, lat);
   const stand = nudgeClear(loc.x, loc.z);
   const gy = terrainHit(stand.x, stand.z);
@@ -1029,6 +1076,8 @@ function goToAddress(lon, lat){
   pendingStand = stand; pendingFace = HALL_C.clone(); pendingWalkH = geoH;
   showGeoHud(true);
   setMode('walk');
+  if (label){ const el = document.getElementById('addrNow');   // seed readout, skip a re-query
+    el.textContent = '≈ ' + label; el.style.display = 'block'; addrQueried.set(stand.x, 0, stand.z); }
   if (heatMetric === 'hours' && todData){     // overlay on → show this spot's soltap
     const c = todCellAt(stand);
     lastVals = c ? c.vals : ZERO;
@@ -1067,7 +1116,7 @@ if (GEO_ON){
       d.addEventListener('click', ()=> choose(i)); list.appendChild(d); });
   };
   const choose = (i)=>{ const it = items[i]; if (!it) return;
-    box.style.display = 'none'; input.value = it.label; goToAddress(it.lon, it.lat); };
+    box.style.display = 'none'; input.value = it.label; goToAddress(it.lon, it.lat, it.label); };
   const openBox = (on)=>{ box.style.display = on ? 'block' : 'none'; if (on) input.focus(); };
   spy.addEventListener('click', ()=> openBox(box.style.display !== 'block'));
 
@@ -1202,6 +1251,7 @@ function animate(){
   } else if (mode==='orbit'){ orbit.update(); }
   if (pinMarker.visible) pinMarker.scale.y = 1 + 0.14*Math.sin(clock.elapsedTime*4.5);   // gentle bob → reads as "active pin"
   syncURL(dt);                 // keep the URL in sync so bookmarks/links capture this view
+  tickAddress(dt);             // throttled reverse-geocode of the walk position
   renderer.render(scene, camera);
 }
 animate();
