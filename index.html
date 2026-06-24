@@ -105,7 +105,7 @@
   #solPanel { position:fixed; left:14px; bottom:14px; width:300px; display:none; z-index:42;
     background:#0e1116f2; border:1px solid var(--line); border-radius:10px; padding:10px 12px;
     box-shadow:0 6px 20px #0008; backdrop-filter:blur(5px); color:var(--txt); }
-  #spHead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:12px; }
+  #spHead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:12px; cursor:move; user-select:none; }
   #spTabs b { color:var(--mut); cursor:pointer; margin-right:12px; font-weight:600; }
   #spTabs b.on { color:var(--acc); }
   #spClose { color:var(--mut); cursor:pointer; font-size:13px; }
@@ -619,6 +619,26 @@ function renderSun(vals){
 solPanel.querySelectorAll('#spTabs b').forEach(b=> b.addEventListener('click',()=>{
   curTab = b.dataset.tab; solPanel.querySelectorAll('#spTabs b').forEach(x=> x.classList.toggle('on', x===b)); renderPanel(); }));
 document.getElementById('spClose').addEventListener('click',()=>{ unpin(); solPanel.style.display='none'; });
+// drag the panel by its header (desktop); a 4px threshold keeps tab/✕ clicks working
+(function(){
+  const head = document.getElementById('spHead');
+  let sx=0, sy=0, ox=0, oy=0, id=null, dragging=false;
+  head.addEventListener('pointerdown',(e)=>{
+    if (matchMedia('(pointer:coarse)').matches) return;
+    id=e.pointerId; sx=e.clientX; sy=e.clientY; dragging=false;
+    const r=solPanel.getBoundingClientRect(); ox=e.clientX-r.left; oy=e.clientY-r.top;
+  });
+  head.addEventListener('pointermove',(e)=>{
+    if (e.pointerId!==id) return;
+    if (!dragging){ if (Math.hypot(e.clientX-sx, e.clientY-sy) < 4) return;
+      dragging=true; solPanel.style.bottom='auto'; head.setPointerCapture(id); }
+    const w=solPanel.offsetWidth, h=solPanel.offsetHeight;
+    const x=Math.max(4, Math.min(innerWidth-w-4, e.clientX-ox)), y=Math.max(4, Math.min(innerHeight-h-4, e.clientY-oy));
+    solPanel.style.left=x+'px'; solPanel.style.top=y+'px';
+  });
+  const end=(e)=>{ if (e.pointerId===id){ if (dragging && head.hasPointerCapture(id)) head.releasePointerCapture(id); id=null; dragging=false; } };
+  head.addEventListener('pointerup', end); head.addEventListener('pointercancel', end);
+})();
 
 // pin marker on the terrain
 const pinMarker = new THREE.Mesh(new THREE.RingGeometry(2.2, 3.2, 32).rotateX(-Math.PI/2),
