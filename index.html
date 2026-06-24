@@ -102,7 +102,7 @@
   #shBars > div > i { display:block; width:100%; background:var(--acc); border-radius:1px 1px 0 0; }
   #shAxis { display:flex; gap:2px; margin-top:3px; }
   #shAxis > span { flex:1; text-align:center; font-size:8px; color:var(--mut); }
-  #solPanel { position:fixed; left:14px; bottom:14px; width:300px; display:none; z-index:42;
+  #solPanel { position:fixed; top:12px; right:12px; width:300px; display:none; z-index:42;
     background:#0e1116f2; border:1px solid var(--line); border-radius:10px; padding:10px 12px;
     box-shadow:0 6px 20px #0008; backdrop-filter:blur(5px); color:var(--txt); }
   #spHead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:12px; cursor:move; user-select:none; }
@@ -558,7 +558,7 @@ function showPanel(){ solPanel.style.display = 'block'; }
 function renderPanel(){ if (!lastVals) return; (curTab === 'carpet' ? renderCarpet : renderSun)(lastVals); }
 
 function renderCarpet(vals){
-  spView.innerHTML = ''; spLeg.style.display = 'block';
+  spView.innerHTML = ''; spLeg.style.display = 'block'; spView.setAttribute('height', 280);
   const X0=30, Y0=8, cw=20, ch=10; let max=0, tot=0, pm=0, ph=0, pk=0;
   for (let m=0; m<12; m++) for (let h=0; h<24; h++){ const x=vals[m*24+h]; tot+=x;
     if (x>max) max=x; if (x>pk){ pk=x; pm=m; ph=h; } }
@@ -588,7 +588,7 @@ function renderCarpet(vals){
 }
 
 function renderSun(vals){
-  spView.innerHTML = ''; spLeg.style.display = 'none'; spRead.textContent = '';
+  spView.innerHTML = ''; spLeg.style.display = 'none'; spRead.textContent = ''; spView.setAttribute('height', 205);
   const X0=26, Y0=8, W=232, H=176, elMax=46;
   const px = az=> X0 + (az/360)*W, py = e=> Y0 + (1-(e+4)/(elMax+4))*H;
   spView.appendChild(svgEl('line',{x1:X0,y1:py(0),x2:X0+W,y2:py(0),stroke:'#39424f','stroke-dasharray':'3 3'}));
@@ -621,8 +621,7 @@ function renderSun(vals){
     const ytop=py(maxEl), hgt=py(0)-py(maxEl);
     const box=(a,b)=> spView.appendChild(svgEl('rect',{x:px(a), y:ytop, width:Math.max(0,px(b)-px(a)), height:hgt,
       fill:'#ff6a2b','fill-opacity':0.18, stroke:'#ff6a2b','stroke-opacity':0.5}));
-    if (hi-lo <= 240){ if (hi<=360) box(lo,hi); else { box(lo,360); box(0,hi-360); }
-      spView.appendChild(svgEl('text',{x:px(((lo+hi)/2)%360), y:ytop-3,'text-anchor':'middle',fill:'#ff9a6b','font-size':'8'})).textContent = 'hallen blokkerer'; }
+    if (hi-lo <= 240){ if (hi<=360) box(lo,hi); else { box(lo,360); box(0,hi-360); } }
     for (const [az,el] of pts) spView.appendChild(svgEl('circle',{cx:px(az),cy:py(el),r:1.6,fill:'#ff6a2b','fill-opacity':0.9}));
   }
   // legend
@@ -656,6 +655,13 @@ document.getElementById('spClose').addEventListener('click',()=>{ unpin(); solPa
   const end=(e)=>{ if (e.pointerId===id){ if (dragging && head.hasPointerCapture(id)) head.releasePointerCapture(id); id=null; dragging=false; } };
   head.addEventListener('pointerup', end); head.addEventListener('pointercancel', end);
 })();
+// keep a dragged panel within the viewport on resize (un-dragged stays anchored top-right via CSS)
+addEventListener('resize', ()=>{
+  if (solPanel.style.display !== 'block' || !solPanel.style.left) return;
+  const w=solPanel.offsetWidth, h=solPanel.offsetHeight;
+  solPanel.style.left = Math.max(4, Math.min(innerWidth-w-4, parseFloat(solPanel.style.left)))+'px';
+  solPanel.style.top  = Math.max(4, Math.min(innerHeight-h-4, parseFloat(solPanel.style.top)))+'px';
+});
 
 // pin marker on the terrain
 const pinMarker = new THREE.Mesh(new THREE.RingGeometry(2.2, 3.2, 32).rotateX(-Math.PI/2),
