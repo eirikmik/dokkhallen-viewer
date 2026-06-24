@@ -667,10 +667,20 @@ addEventListener('resize', ()=>{
 });
 
 // pin marker on the terrain
-const pinMarker = new THREE.Mesh(new THREE.RingGeometry(2.2, 3.2, 32).rotateX(-Math.PI/2),
-  new THREE.MeshBasicMaterial({ color:0x5aa9ff, transparent:true, opacity:0.9, depthWrite:false }));
-pinMarker.renderOrder = 7; pinMarker.visible = false; scene.add(pinMarker);
-function pinAt(pt){ pinMarker.position.set(pt.x, pt.y+0.5, pt.z); pinMarker.visible = true; }
+const PIN_COL = 0x36c5ff;                       // bright cyan-blue, pops against terrain + inferno overlay
+const pinMarker = new THREE.Group(); pinMarker.visible = false;
+{
+  const mat = (extra)=> new THREE.MeshBasicMaterial(Object.assign({ color:PIN_COL, transparent:true, depthWrite:false }, extra));
+  const ring = new THREE.Mesh(new THREE.RingGeometry(5, 7.5, 48).rotateX(-Math.PI/2), mat({ opacity:0.85 }));
+  ring.position.y = 0.6; ring.renderOrder = 7;
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 18, 10), mat({ opacity:0.95 }));
+  stem.position.y = 9.6; stem.renderOrder = 7;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(3.2, 18, 14), mat({ opacity:1, depthTest:false }));
+  head.position.y = 20; head.renderOrder = 14;  // depthTest off → head stays visible even behind buildings
+  pinMarker.add(ring, stem, head);
+}
+scene.add(pinMarker);
+function pinAt(pt){ pinMarker.position.set(pt.x, pt.y, pt.z); pinMarker.visible = true; }
 function unpin(){ pinMarker.visible = false; pinned = false; }   // panel stays, resumes live updating
 
 function rayHit(e){
@@ -1027,6 +1037,7 @@ function animate(){
     if(r) walk.moveRight(r*sp);
     camera.position.y = groundY(camera.position.x, camera.position.z)+eyeH;
   } else if (mode==='orbit'){ orbit.update(); }
+  if (pinMarker.visible) pinMarker.scale.y = 1 + 0.14*Math.sin(clock.elapsedTime*4.5);   // gentle bob → reads as "active pin"
   syncURL(dt);                 // keep the URL in sync so bookmarks/links capture this view
   renderer.render(scene, camera);
 }
