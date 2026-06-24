@@ -239,7 +239,8 @@
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
-  "proj4": "https://cdn.jsdelivr.net/npm/proj4@2.15.0/+esm"
+  "proj4": "https://cdn.jsdelivr.net/npm/proj4@2.15.0/+esm",
+  "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js"
 }}
 </script>
 <script type="module">
@@ -248,6 +249,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;   // fast raycasts (collision, ground, pin)
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 import proj4 from 'proj4';
 proj4.defs('EPSG:25833', '+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs');
 const OE = 562264.0, ON = 7632511.0;            // terrain/meta.json origin
@@ -393,6 +398,27 @@ function nudgeClear(x, z){
   return stand;
 }
 window.nudgeClear = nudgeClear;
+// walk-mode wall collision: per-axis raycast against buildings (+ hall), revert blocked axis
+// so you slide along walls. BVH (three-mesh-bvh) makes the 283k-tri city mesh cheap to ray.
+const wallRay = new THREE.Raycaster(); wallRay.firstHitOnly = true; wallRay.far = 6;
+const WALL_RAD = 1.0;                         // keep this far off a wall
+function collideWalls(p0x, p0z){
+  if (!cityMeshes.length) return;
+  const colliders = (proposal && proposal.visible) ? cityMeshes.concat(proposal) : cityMeshes;
+  const cy = camera.position.y;
+  const dx = camera.position.x - p0x;
+  if (dx !== 0){
+    wallRay.set(new THREE.Vector3(p0x, cy, p0z), new THREE.Vector3(Math.sign(dx),0,0));
+    const h = wallRay.intersectObjects(colliders, true);
+    if (h.length && h[0].distance < Math.abs(dx) + WALL_RAD) camera.position.x = p0x;
+  }
+  const dz = camera.position.z - p0z;
+  if (dz !== 0){
+    wallRay.set(new THREE.Vector3(camera.position.x, cy, p0z), new THREE.Vector3(0,0,Math.sign(dz)));
+    const h = wallRay.intersectObjects(colliders, true);
+    if (h.length && h[0].distance < Math.abs(dz) + WALL_RAD) camera.position.z = p0z;
+  }
+}
 
 // procedural facade on the clean massing: framed windows, reflective glass (catches
 // the sun), taller ground floor, per-window variation, lit windows at night.
@@ -534,7 +560,7 @@ gltfLoader.load('scene.glb', (g)=>{
       o.castShadow = true; o.receiveShadow = true;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       if (mats.some(m=>m && m.map)) {          // terrain (multi-material ortho)
-        terrains.push(o); mats.forEach(m=>{ if(m) m.roughness = 0.95; });
+        terrains.push(o); o.geometry.computeBoundsTree(); mats.forEach(m=>{ if(m) m.roughness = 0.95; });
       } else {                                  // the non-terrain mesh = the hall
         proposal = o; o.material = makeHall();   // architectural look: dark roof + pale-blue panel mosaic
       }
@@ -546,6 +572,7 @@ gltfLoader.load('scene.glb', (g)=>{
     const bb = new THREE.Box3().setFromObject(proposal);
     HALL_U.uY0.value = bb.min.y; HALL_U.uY1.value = bb.max.y;
     HALL_C.set((bb.min.x+bb.max.x)/2, 0, (bb.min.z+bb.max.z)/2);   // hall centre, local
+    proposal.geometry.computeBoundsTree();                          // collide with the hall too
   }
   document.getElementById('load').remove();
   updateSun();
@@ -554,7 +581,7 @@ gltfLoader.load('scene.glb', (g)=>{
 // colored city buildings (Google-sampled) with procedural windows
 gltfLoader.load('city_colored.glb', (g)=>{
   const fm = makeFacade();
-  g.scene.traverse(o=>{ if(o.isMesh){ o.material = fm; o.castShadow = true; o.receiveShadow = true; cityMeshes.push(o); } });
+  g.scene.traverse(o=>{ if(o.isMesh){ o.material = fm; o.castShadow = true; o.receiveShadow = true; cityMeshes.push(o); o.geometry.computeBoundsTree(); } });
   scene.add(g.scene);
 }, undefined, ()=>{});
 // sun-loss heat overlays (net hours/yr lost to the hall) — draped on terrain, unlit, lazy-loaded
@@ -1245,8 +1272,10 @@ function animate(){
     if(keys['KeyW']) f+=1; if(keys['KeyS']) f-=1;
     if(keys['KeyA']) r-=1; if(keys['KeyD']) r+=1;
     if(touchWalk){ f += -joyVec.y; r += joyVec.x; }
+    const _p0x = camera.position.x, _p0z = camera.position.z;
     if(f) walk.moveForward(f*sp);
     if(r) walk.moveRight(r*sp);
+    if(f||r) collideWalls(_p0x, _p0z);          // block movement into building/hall walls
     camera.position.y = groundY(camera.position.x, camera.position.z)+walkH;
   } else if (mode==='orbit'){ orbit.update(); }
   if (pinMarker.visible) pinMarker.scale.y = 1 + 0.14*Math.sin(clock.elapsedTime*4.5);   // gentle bob → reads as "active pin"
