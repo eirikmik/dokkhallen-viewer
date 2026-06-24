@@ -109,6 +109,7 @@
   #spTabs b { color:var(--mut); cursor:pointer; margin-right:12px; font-weight:600; }
   #spTabs b.on { color:var(--acc); }
   #spClose { color:var(--mut); cursor:pointer; font-size:13px; }
+  #spView, #spLeg { display:block; width:100%; }
   #spView text.sx, #spLeg text.sx { fill:var(--mut); font-size:9px; }
   #spRead { min-height:16px; font-size:12px; margin-top:6px; color:var(--txt); font-variant-numeric:tabular-nums; }
   #spSum { font-size:11.5px; color:var(--mut); margin-top:4px; font-variant-numeric:tabular-nums; }
@@ -559,7 +560,8 @@ function renderPanel(){ if (!lastVals) return; (curTab === 'carpet' ? renderCarp
 
 function renderCarpet(vals){
   spView.innerHTML = ''; spLeg.style.display = 'block'; spView.setAttribute('height', 280);
-  const X0=30, Y0=8, cw=20, ch=10; let max=0, tot=0, pm=0, ph=0, pk=0;
+  const X0=30, Y0=8, ch=10, cw=((spView.clientWidth||276)-X0-6)/12;   // fill the rendered width
+  let max=0, tot=0, pm=0, ph=0, pk=0;
   for (let m=0; m<12; m++) for (let h=0; h<24; h++){ const x=vals[m*24+h]; tot+=x;
     if (x>max) max=x; if (x>pk){ pk=x; pm=m; ph=h; } }
   let hl = null;
@@ -580,16 +582,17 @@ function renderCarpet(vals){
   ILUT.forEach((c,k)=> lg.appendChild(svgEl('stop',{offset:(k/(ILUT.length-1)*100)+'%',
     'stop-color':`rgb(${Math.round(c[0]*255)},${Math.round(c[1]*255)},${Math.round(c[2]*255)})`})));
   defs.appendChild(lg); spLeg.appendChild(defs);
-  spLeg.appendChild(svgEl('rect',{x:X0, y:4, width:230, height:8, rx:2, fill:'url(#spig)'}));
+  const barW = (spLeg.clientWidth||276)-X0-6;
+  spLeg.appendChild(svgEl('rect',{x:X0, y:4, width:barW, height:8, rx:2, fill:'url(#spig)'}));
   spLeg.appendChild(svgEl('text',{x:X0, y:24,'class':'sx'})).textContent = '0';
-  spLeg.appendChild(svgEl('text',{x:X0+230, y:24,'text-anchor':'end','class':'sx'})).textContent = '≈'+Math.round(max)+' t';
+  spLeg.appendChild(svgEl('text',{x:X0+barW, y:24,'text-anchor':'end','class':'sx'})).textContent = '≈'+Math.round(max)+' t';
   spSum.innerHTML = `<b>${Math.round(tot)} t/år</b> tapt · mest i <b>${MONF[pm]}</b> rundt <b>kl ${String(ph).padStart(2,'0')}</b>`;
   spRead.textContent = 'Pek på en rute for å lese av timer';
 }
 
 function renderSun(vals){
   spView.innerHTML = ''; spLeg.style.display = 'none'; spRead.textContent = ''; spView.setAttribute('height', 205);
-  const X0=26, Y0=8, W=232, H=176, elMax=46;
+  const X0=26, Y0=8, H=176, elMax=46, W=(spView.clientWidth||276)-X0-6;   // fill the rendered width
   const px = az=> X0 + (az/360)*W, py = e=> Y0 + (1-(e+4)/(elMax+4))*H;
   spView.appendChild(svgEl('line',{x1:X0,y1:py(0),x2:X0+W,y2:py(0),stroke:'#39424f','stroke-dasharray':'3 3'}));
   for (const [a,lab] of [[0,'N'],[90,'Ø'],[180,'S'],[270,'V'],[360,'N']]){
