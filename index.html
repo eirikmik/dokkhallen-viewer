@@ -667,7 +667,7 @@ addEventListener('resize', ()=>{
 });
 
 // pin marker on the terrain
-const PIN_COL = 0x36c5ff;                       // bright cyan-blue, pops against terrain + inferno overlay
+const PIN_COL = 0xff2d2d;                       // bright red
 const pinMarker = new THREE.Group(); pinMarker.visible = false;
 {
   const mat = (extra)=> new THREE.MeshBasicMaterial(Object.assign({ color:PIN_COL, transparent:true, depthWrite:false }, extra));
