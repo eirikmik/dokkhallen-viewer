@@ -91,6 +91,17 @@
     transform:translate(13px,13px); background:#0e1116e6; border:1px solid var(--line);
     border-radius:6px; padding:3px 7px; font-size:12px; color:var(--txt); white-space:nowrap;
     font-variant-numeric:tabular-nums; backdrop-filter:blur(3px); }
+  #solHist { position:fixed; left:0; top:0; display:none; pointer-events:none; z-index:41;
+    transform:translate(16px,16px); background:#0e1116f2; border:1px solid var(--line);
+    border-radius:8px; padding:8px 9px 6px; width:184px; color:var(--txt);
+    box-shadow:0 4px 14px #0007; backdrop-filter:blur(4px); }
+  #shTitle { font-size:11px; color:var(--mut); margin-bottom:5px; font-variant-numeric:tabular-nums; }
+  #shTitle b { color:var(--txt); }
+  #shBars { display:flex; align-items:flex-end; gap:2px; height:46px; }
+  #shBars > div { flex:1; display:flex; align-items:flex-end; height:100%; }
+  #shBars > div > i { display:block; width:100%; background:var(--acc); border-radius:1px 1px 0 0; }
+  #shAxis { display:flex; gap:2px; margin-top:3px; }
+  #shAxis > span { flex:1; text-align:center; font-size:8px; color:var(--mut); }
   #solPanel { position:fixed; left:14px; bottom:14px; width:300px; display:none; z-index:42;
     background:#0e1116f2; border:1px solid var(--line); border-radius:10px; padding:10px 12px;
     box-shadow:0 6px 20px #0008; backdrop-filter:blur(5px); color:var(--txt); }
@@ -107,6 +118,7 @@
 <body>
 <canvas id="c"></canvas>
 <div id="solTip"></div>
+<div id="solHist"><div id="shTitle"></div><div id="shBars"></div><div id="shAxis"></div></div>
 <div id="solPanel">
   <div id="spHead"><span id="spTabs"><b data-tab="carpet" class="on">Teppe</b><b data-tab="sun">Solbane</b></span><span id="spClose">✕</span></div>
   <svg id="spView" width="276" height="280"></svg>
@@ -505,6 +517,21 @@ function inferno(t){ t = Math.max(0,Math.min(1,t))*(ILUT.length-1); const i = Ma
   const a = ILUT[i], b = ILUT[Math.min(i+1,ILUT.length-1)]; const c = k=>Math.round(255*(a[k]+(b[k]-a[k])*f));
   return `rgb(${c(0)},${c(1)},${c(2)})`; }
 
+// cursor-following monthly mini-histogram (row-sum of the month×hour cell) shown while hovering
+const solHist = document.getElementById('solHist'), shTitle = document.getElementById('shTitle');
+const shBars = document.getElementById('shBars'), shAxis = document.getElementById('shAxis');
+const MINI = ['J','F','M','A','M','J','J','A','S','O','N','D']; const barFill = [];
+for (let m=0; m<12; m++){ const col = document.createElement('div'), fill = document.createElement('i');
+  col.appendChild(fill); shBars.appendChild(col); barFill.push(fill);
+  const lab = document.createElement('span'); lab.textContent = MINI[m]; shAxis.appendChild(lab); }
+function renderMiniHist(vals){
+  const mo = new Array(12).fill(0); let tot=0, mx=0, pk=0;
+  for (let m=0; m<12; m++){ let s=0; for (let h=0; h<24; h++) s+=vals[m*24+h]; mo[m]=s; tot+=s; if (s>mx){ mx=s; pk=m; } }
+  const denom = mx>0 ? mx : 1;
+  for (let m=0; m<12; m++){ barFill[m].style.height = (100*mo[m]/denom).toFixed(1)+'%'; barFill[m].style.opacity = m===pk ? 1 : 0.66; }
+  shTitle.innerHTML = '<b>'+Math.round(tot)+' t/år</b> tapt · mest i '+MONF[pk];
+}
+
 // month×hour side-file (sparse: only loss cells), lazy-loaded with the hours overlay
 let todData = null, todHdr = null, todRow = null, todLoading = false;
 function loadTod(){
@@ -605,19 +632,24 @@ function rayHit(e){
   ray.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1), camera);
   const hit = ray.intersectObject(heatCur, true); return hit.length ? hit[0] : null;
 }
+function hideCursor(){ solTip.style.display='none'; solHist.style.display='none'; }
 renderer.domElement.addEventListener('pointermove', (e)=>{
-  if (!heatCur || walk.isLocked || touchWalk){ solTip.style.display='none'; return; }
+  if (!heatCur || walk.isLocked || touchWalk){ hideCursor(); return; }
   const h0 = rayHit(e);
   const v = h0 && h0.uv ? h0.uv.x : 0;
-  if (v <= 0.5){ solTip.style.display='none'; return; }
+  if (v <= 0.5){ hideCursor(); return; }              // off-mesh or no real loss
+  // hours: cursor-following monthly histogram from the month×hour cell (docked panel is pin-only)
+  if (heatMetric === 'hours'){
+    const c = todCellAt(h0 && h0.point);
+    if (c){ renderMiniHist(c); solTip.style.display='none';
+      solHist.style.left = e.clientX+'px'; solHist.style.top = e.clientY+'px'; solHist.style.display='block'; return; }
+  }
+  // other metrics (or hours before the side-file loads): one-line total
+  solHist.style.display='none';
   solTip.textContent = (v < 1 ? '<1' : Math.round(v)) + ' t/år · ' + (HEAT_LABEL[heatMetric] || '');
   solTip.style.left = e.clientX+'px'; solTip.style.top = e.clientY+'px'; solTip.style.display = 'block';
-  if (heatMetric === 'hours' && !panelFrozen){
-    const c = todCellAt(h0 && h0.point);
-    if (c){ lastVals = c; showPanel(); renderPanel(); }
-  }
 });
-renderer.domElement.addEventListener('pointerleave', ()=>{ solTip.style.display='none'; });
+renderer.domElement.addEventListener('pointerleave', hideCursor);
 renderer.domElement.addEventListener('click', (e)=>{
   if (heatMetric !== 'hours' || walk.isLocked) return;
   const h0 = rayHit(e); const c = h0 && h0.point ? todCellAt(h0.point) : null;
