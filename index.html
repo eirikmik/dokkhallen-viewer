@@ -625,10 +625,17 @@ function renderSun(vals){
     let lo=azs[(ki+1)%n], hi=azs[ki]; if (hi<=lo) hi+=360;
     const ytop=py(maxEl), hgt=py(0)-py(maxEl);
     const box=(a,b)=> spView.appendChild(svgEl('rect',{x:px(a), y:ytop, width:Math.max(0,px(b)-px(a)), height:hgt,
-      fill:'#ff6a2b','fill-opacity':0.18, stroke:'#ff6a2b','stroke-opacity':0.5}));
+      fill:'#ff6a2b','fill-opacity':0.10, stroke:'#ff6a2b','stroke-opacity':0.4}));
     if (hi-lo <= 240){ if (hi<=360) box(lo,hi); else { box(lo,360); box(0,hi-360); } }
-    for (const [az,el] of pts) spView.appendChild(svgEl('circle',{cx:px(az),cy:py(el),r:1.6,fill:'#ff6a2b','fill-opacity':0.9}));
   }
+  // each blocked hour drawn as the sun's track over that hour (the real lost arc, not a point)
+  for (let m=0; m<12; m++) for (let h=0; h<24; h++){ if (vals[m*24+h] <= 0.5) continue;
+    let d='', prev=null, started=false;
+    for (let t=h; t<=h+1+1e-9; t+=0.12){ const {az,el} = sunAzEl(2026, m+1, 15, Math.min(t,24));
+      if (el<-3){ started=false; prev=null; continue; }
+      if (prev!==null && Math.abs(az-prev)>180) started=false;        // azimuth wrap → break the segment
+      d += (started?'L':'M')+px(az).toFixed(1)+' '+py(el).toFixed(1)+' '; started=true; prev=az; }
+    if (d) spView.appendChild(svgEl('path',{d, fill:'none', stroke:'#ff6a2b','stroke-width':2.4,'stroke-linecap':'round','stroke-opacity':0.92})); }
   // legend
   spView.appendChild(svgEl('text',{x:X0+W, y:Y0+8,'text-anchor':'end',fill:'#ffd479','font-size':'8'})).textContent = '— 21. jun';
   spView.appendChild(svgEl('text',{x:X0+W, y:Y0+18,'text-anchor':'end',fill:'#5aa9ff','font-size':'8'})).textContent = '— 21. des';
