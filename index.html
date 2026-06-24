@@ -553,7 +553,7 @@ function todCellAt(pt){
 }
 
 // ---- docked panel: carpet (Teppe) + sun-path (Solbane), both from the 288-value cell ----
-let panelFrozen = false, curTab = 'carpet', lastVals = null;
+let pinned = false, curTab = 'carpet', lastVals = null;
 function showPanel(){ solPanel.style.display = 'block'; }
 function renderPanel(){ if (!lastVals) return; (curTab === 'carpet' ? renderCarpet : renderSun)(lastVals); }
 
@@ -625,7 +625,7 @@ const pinMarker = new THREE.Mesh(new THREE.RingGeometry(2.2, 3.2, 32).rotateX(-M
   new THREE.MeshBasicMaterial({ color:0x5aa9ff, transparent:true, opacity:0.9, depthWrite:false }));
 pinMarker.renderOrder = 7; pinMarker.visible = false; scene.add(pinMarker);
 function pinAt(pt){ pinMarker.position.set(pt.x, pt.y+0.5, pt.z); pinMarker.visible = true; }
-function unpin(){ pinMarker.visible = false; panelFrozen = false; }
+function unpin(){ pinMarker.visible = false; pinned = false; }   // panel stays, resumes live updating
 
 function rayHit(e){
   const r = renderer.domElement.getBoundingClientRect();
@@ -638,11 +638,13 @@ renderer.domElement.addEventListener('pointermove', (e)=>{
   const h0 = rayHit(e);
   const v = h0 && h0.uv ? h0.uv.x : 0;
   if (v <= 0.5){ hideCursor(); return; }              // off-mesh or no real loss
-  // hours: cursor-following monthly histogram from the month×hour cell (docked panel is pin-only)
+  // hours: cursor-following monthly histogram; docked panel live-updates unless pinned
   if (heatMetric === 'hours'){
     const c = todCellAt(h0 && h0.point);
     if (c){ renderMiniHist(c); solTip.style.display='none';
-      solHist.style.left = e.clientX+'px'; solHist.style.top = e.clientY+'px'; solHist.style.display='block'; return; }
+      solHist.style.left = e.clientX+'px'; solHist.style.top = e.clientY+'px'; solHist.style.display='block';
+      if (!pinned){ lastVals = c; showPanel(); renderPanel(); }
+      return; }
   }
   // other metrics (or hours before the side-file loads): one-line total
   solHist.style.display='none';
@@ -652,11 +654,15 @@ renderer.domElement.addEventListener('pointermove', (e)=>{
 renderer.domElement.addEventListener('pointerleave', hideCursor);
 renderer.domElement.addEventListener('click', (e)=>{
   if (heatMetric !== 'hours' || walk.isLocked) return;
-  const h0 = rayHit(e); const c = h0 && h0.point ? todCellAt(h0.point) : null;
-  if (c){ lastVals = c; pinAt(h0.point); panelFrozen = true; showPanel(); renderPanel(); }
-  else { unpin(); solPanel.style.display = 'none'; }
+  const h0 = rayHit(e); const pt = h0 && h0.point;
+  // click on (or near) the existing pin → release it and resume live updating
+  if (pinned && pt){ const dx = pt.x-pinMarker.position.x, dz = pt.z-pinMarker.position.z;
+    if (Math.hypot(dx,dz) < (todHdr ? todHdr.ostep*1.5 : 6)){ unpin(); return; } }
+  const c = pt ? todCellAt(pt) : null;
+  if (c){ lastVals = c; pinAt(pt); pinned = true; showPanel(); renderPanel(); }  // pin & lock here
+  else { unpin(); }                                                              // clicked empty → back to live
 });
-addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && pinMarker.visible){ unpin(); } });
+addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && pinned){ unpin(); } });
 
 // ---- sun update from UI ----
 const dayEl=document.getElementById('day'), hourEl=document.getElementById('hour');
