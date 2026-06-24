@@ -114,6 +114,29 @@
   #spRead { min-height:16px; font-size:12px; margin-top:6px; color:var(--txt); font-variant-numeric:tabular-nums; }
   #spSum { font-size:11.5px; color:var(--mut); margin-top:4px; font-variant-numeric:tabular-nums; }
   @media (pointer:coarse){ #solPanel { left:0; right:0; top:auto; bottom:0; width:auto; border-radius:12px 12px 0 0; } }
+  #spyBtn{ flex:none; width:34px; height:34px; border-radius:8px; padding:0;
+    background:#0f141b; border:1px solid var(--line); color:var(--txt); font-size:16px; cursor:pointer; display:none; }
+  #addrBox{ display:none; margin-top:10px; background:#0f141b; border:1px solid var(--line); border-radius:8px; padding:8px; }
+  #addrInput{ width:100%; box-sizing:border-box; background:#0e1116; color:var(--txt);
+    border:1px solid var(--line); border-radius:6px; padding:6px 8px; font-size:13px; }
+  #addrList{ margin-top:6px; max-height:240px; overflow-y:auto; }
+  #addrList .item{ padding:6px 8px; border-radius:6px; font-size:12px; cursor:pointer; color:var(--txt); }
+  #addrList .item:hover, #addrList .item.sel{ background:#1a222d; }
+  #addrList .empty{ padding:6px 8px; font-size:12px; color:var(--mut); }
+  #geoHud{ position:fixed; left:12px; bottom:12px; z-index:44; display:none;
+    background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; width:210px; }
+  #geoHud label{ display:flex; justify-content:space-between; font-size:11px; color:var(--mut); margin-bottom:6px; }
+  #geoHud label b{ color:var(--txt); font-variant-numeric:tabular-nums; }
+  #geoHud input[type=range]{ width:100%; accent-color:var(--acc); }
+  #toast{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:60;
+    background:rgba(13,17,23,.92); border:1px solid var(--line); color:var(--txt);
+    padding:8px 14px; border-radius:8px; font-size:12px; display:none; max-width:80vw; text-align:center; }
+  #addrNow{ position:fixed; right:84px; bottom:12px; z-index:45; display:none;
+    background:rgba(13,17,23,.85); border:1px solid var(--line); color:var(--mut);
+    padding:5px 10px; border-radius:8px; font-size:12px; max-width:50vw; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; backdrop-filter:blur(3px); }
+  @media (pointer:coarse){ #geoHud{ left:50%; transform:translateX(-50%); bottom:96px; }
+    #addrNow{ top:12px; bottom:auto; right:12px; } }
 </style>
 </head>
 <body>
@@ -174,13 +197,22 @@
   </div>
   <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
     <div id="pegman" title="Dra ut på kartet for å stå der (1,5 m)" style="font-size:22px;line-height:1;cursor:grab;user-select:none;touch-action:none;padding:5px 8px;background:#0f141b;border:1px solid var(--line);border-radius:8px">🧍</div>
-    <span style="color:var(--mut);font-size:11px">Dra figuren til kartet for gateplan (1,5 m)</span>
+    <button id="spyBtn" title="Søk adresse">🔍</button>
+    <span style="color:var(--mut);font-size:11px">Dra figuren for gateplan · 🔍 for adresse</span>
+  </div>
+  <div id="addrBox">
+    <input id="addrInput" type="text" placeholder="Søk adresse i Harstad…" autocomplete="off">
+    <div id="addrList"></div>
   </div>
   <button id="bShare" style="width:100%;margin-top:12px">🔗 Kopier delbar lenke</button>
   <div class="sub" style="margin:6px 0 0;font-size:10px">Bokmerk siden for å lagre dette utsiktspunktet som favoritt.</div>
   </div>
 </div>
 <div id="hint">Dra for å se · rull for zoom · dra <b>🧍</b> for å stå · Gå: <b>WASD</b> · <b>Esc</b> for panel, klikk i visningen for å fortsette</div>
+<div id="geoHud"><label>Høyde over bakken <b id="geoHval">1,6 m</b></label>
+  <input id="geoHsl" type="range" min="0" max="30" step="0.5" value="1.6"></div>
+<div id="toast"></div>
+<div id="addrNow"></div>
 <button id="gear" title="Innstillinger">⚙</button>
 <div id="settings"></div>
 <div id="joy"><div id="joyKnob"></div></div>
@@ -206,7 +238,9 @@
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+  "proj4": "https://cdn.jsdelivr.net/npm/proj4@2.15.0/+esm",
+  "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js"
 }}
 </script>
 <script type="module">
@@ -215,6 +249,23 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;   // fast raycasts (collision, ground, pin)
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
+import proj4 from 'proj4';
+proj4.defs('EPSG:25833', '+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs');
+const OE = 562264.0, ON = 7632511.0;            // terrain/meta.json origin
+function lonLatToLocal(lon, lat){
+  const [E, N] = proj4('EPSG:4326', 'EPSG:25833', [lon, lat]);
+  return { x: E - OE, z: -(N - ON) };           // viewer frame x=E, z=-N
+}
+window.lonLatToLocal = lonLatToLocal;
+function localToLonLat(x, z){                    // inverse: viewer local -> WGS84 [lon,lat]
+  const [lon, lat] = proj4('EPSG:25833', 'EPSG:4326', [x + OE, ON - z]);
+  return [lon, lat];
+}
+window.localToLonLat = localToLonLat;
 
 const LAT = 68.7970, LON = 16.5427;
 // private visit ping (fire-and-forget; counted server-side, nothing shown here)
@@ -309,16 +360,64 @@ addEventListener('keyup',   e=>keys[e.code]=false);
 const isTouch = matchMedia('(pointer:coarse)').matches || ('ontouchstart' in window);
 let touchWalk = false;
 let eyeH = 1.5;                 // walk-mode eye height (m), tunable in settings
+let walkH = eyeH;              // active above-ground height for walk mode
+let geoH = 1.6;               // address/geo stand height (m), 0–30
+let pendingWalkH = null;      // set before setMode('walk') to override eyeH for that entry
 const look = new THREE.Euler(0,0,0,'YXZ');
 const joyVec = { x:0, y:0 };
 
 const terrains = [];
+const cityMeshes = [];                       // city_colored.glb meshes, for under-roof tests
+const HALL_C = new THREE.Vector3();          // hall centre (local), set on scene load
+window.cityMeshes = cityMeshes; window.HALL_C = HALL_C;
 let proposal = null;
 const ray = new THREE.Raycaster();
 function groundY(x, z){
   ray.set(new THREE.Vector3(x, 2000, z), new THREE.Vector3(0,-1,0));
   const hit = ray.intersectObjects(terrains, true);
   return hit.length ? hit[0].point.y : 0;
+}
+function terrainHit(x, z){                    // like groundY but null on a miss (bounds check)
+  ray.set(new THREE.Vector3(x, 2000, z), new THREE.Vector3(0,-1,0));
+  const hit = ray.intersectObjects(terrains, true);
+  return hit.length ? hit[0].point.y : null;
+}
+window.terrainHit = terrainHit;
+// step a stand point out from under its building, toward the hall, +2 m margin (cap 40 m)
+function nudgeClear(x, z){
+  const stand = new THREE.Vector3(x, 0, z);
+  const dir = new THREE.Vector3(HALL_C.x - x, 0, HALL_C.z - z);
+  if (dir.lengthSq() < 1e-6) return stand;
+  dir.normalize();
+  const down = new THREE.Vector3(0,-1,0), r2 = new THREE.Raycaster();
+  const underRoof = (p)=>{ r2.set(new THREE.Vector3(p.x, 1000, p.z), down);
+    return r2.intersectObjects(cityMeshes, true).length > 0; };
+  let d = 0; const STEP = 1, MAX = 40, MARGIN = 2; let moved = false;
+  while (d < MAX && underRoof(stand)){ stand.addScaledVector(dir, STEP); d += STEP; moved = true; }
+  if (moved) stand.addScaledVector(dir, MARGIN);
+  return stand;
+}
+window.nudgeClear = nudgeClear;
+// walk-mode wall collision: per-axis raycast against buildings (+ hall), revert blocked axis
+// so you slide along walls. BVH (three-mesh-bvh) makes the 283k-tri city mesh cheap to ray.
+const wallRay = new THREE.Raycaster(); wallRay.firstHitOnly = true; wallRay.far = 6;
+const WALL_RAD = 1.0;                         // keep this far off a wall
+function collideWalls(p0x, p0z){
+  if (!cityMeshes.length) return;
+  const colliders = (proposal && proposal.visible) ? cityMeshes.concat(proposal) : cityMeshes;
+  const cy = camera.position.y;
+  const dx = camera.position.x - p0x;
+  if (dx !== 0){
+    wallRay.set(new THREE.Vector3(p0x, cy, p0z), new THREE.Vector3(Math.sign(dx),0,0));
+    const h = wallRay.intersectObjects(colliders, true);
+    if (h.length && h[0].distance < Math.abs(dx) + WALL_RAD) camera.position.x = p0x;
+  }
+  const dz = camera.position.z - p0z;
+  if (dz !== 0){
+    wallRay.set(new THREE.Vector3(camera.position.x, cy, p0z), new THREE.Vector3(0,0,Math.sign(dz)));
+    const h = wallRay.intersectObjects(colliders, true);
+    if (h.length && h[0].distance < Math.abs(dz) + WALL_RAD) camera.position.z = p0z;
+  }
 }
 
 // procedural facade on the clean massing: framed windows, reflective glass (catches
@@ -461,7 +560,7 @@ gltfLoader.load('scene.glb', (g)=>{
       o.castShadow = true; o.receiveShadow = true;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       if (mats.some(m=>m && m.map)) {          // terrain (multi-material ortho)
-        terrains.push(o); mats.forEach(m=>{ if(m) m.roughness = 0.95; });
+        terrains.push(o); o.geometry.computeBoundsTree(); mats.forEach(m=>{ if(m) m.roughness = 0.95; });
       } else {                                  // the non-terrain mesh = the hall
         proposal = o; o.material = makeHall();   // architectural look: dark roof + pale-blue panel mosaic
       }
@@ -472,6 +571,8 @@ gltfLoader.load('scene.glb', (g)=>{
     proposal.updateWorldMatrix(true, true);
     const bb = new THREE.Box3().setFromObject(proposal);
     HALL_U.uY0.value = bb.min.y; HALL_U.uY1.value = bb.max.y;
+    HALL_C.set((bb.min.x+bb.max.x)/2, 0, (bb.min.z+bb.max.z)/2);   // hall centre, local
+    proposal.geometry.computeBoundsTree();                          // collide with the hall too
   }
   document.getElementById('load').remove();
   updateSun();
@@ -480,7 +581,7 @@ gltfLoader.load('scene.glb', (g)=>{
 // colored city buildings (Google-sampled) with procedural windows
 gltfLoader.load('city_colored.glb', (g)=>{
   const fm = makeFacade();
-  g.scene.traverse(o=>{ if(o.isMesh){ o.material = fm; o.castShadow = true; o.receiveShadow = true; } });
+  g.scene.traverse(o=>{ if(o.isMesh){ o.material = fm; o.castShadow = true; o.receiveShadow = true; cityMeshes.push(o); o.geometry.computeBoundsTree(); } });
   scene.add(g.scene);
 }, undefined, ()=>{});
 // sun-loss heat overlays (net hours/yr lost to the hall) — draped on terrain, unlit, lazy-loaded
@@ -791,6 +892,7 @@ dayEl.oninput = ()=>{ stopLive(); updateSun(); }; hourEl.oninput = ()=>{ stopLiv
 
 // stand point is set only by dropping the Pegman (click-to-walk disabled)
 let pendingStand = null;
+let pendingFace = null;      // world point to face on next walk entry (else keep heading)
 
 // ---- mode switching ----
 const bOrbit=document.getElementById('bOrbit');
@@ -802,9 +904,12 @@ function setMode(m){
     orbit.enabled=false;
     camera.up.set(0,1,0);
     const p = pendingStand || new THREE.Vector3(120,0,-150);
-    camera.position.set(p.x, groundY(p.x,p.z)+eyeH, p.z);
-    // start looking level: keep current heading, zero the pitch
-    const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y = 0;
+    walkH = (pendingWalkH != null) ? pendingWalkH : eyeH; pendingWalkH = null;
+    camera.position.set(p.x, groundY(p.x,p.z)+walkH, p.z);
+    // start looking level: face pendingFace if set, else keep current heading
+    let fwd = new THREE.Vector3();
+    if (pendingFace){ fwd.set(pendingFace.x - camera.position.x, 0, pendingFace.z - camera.position.z); pendingFace = null; }
+    else { camera.getWorldDirection(fwd); fwd.y = 0; }
     if (fwd.lengthSq() < 1e-4) fwd.set(0,0,-1);
     fwd.normalize();
     camera.lookAt(camera.position.clone().add(fwd));
@@ -816,7 +921,7 @@ function setMode(m){
       walk.lock();
     }
   } else {                                  // orbit
-    touchWalk = false; joy.style.display = 'none';
+    touchWalk = false; joy.style.display = 'none'; showGeoHud(false);
     joyVec.x = joyVec.y = 0; joyKnob.style.transform = 'translate(-50%,-50%)';
     if(walk.isLocked) walk.unlock();
     camera.up.set(0,1,0);
@@ -891,19 +996,25 @@ function viewToStr(){
   else t = orbit.target;
   return [ mode==='walk'?1:0, Math.round(+dayEl.value), Math.round(+hourEl.value),
     document.getElementById('toggle').checked?1:0, document.getElementById('hard').checked?1:0,
-    R1(p.x),R1(p.y),R1(p.z), R1(t.x),R1(t.y),R1(t.z) ].join(',');
+    R1(p.x),R1(p.y),R1(p.z), R1(t.x),R1(t.y),R1(t.z),
+    R1(mode==='walk'?walkH:eyeH) ].join(',');     // 12th: above-ground height (walk)
 }
 function applyViewStr(s){
   const a=(s||'').split(',').map(Number);
   if (a.length<11 || a.some(n=>!isFinite(n))) return false;
   const [wk,day,hr,prop,hard,px,py,pz,tx,ty,tz]=a;
+  const wh = (a.length>11 && isFinite(a[11])) ? a[11] : eyeH;   // above-ground height (older links omit)
   dayEl.value=day; hourEl.value=hr;
   const tog=document.getElementById('toggle'); tog.checked=!!prop; if(proposal) proposal.visible=!!prop;
   const hd=document.getElementById('hard'); if(!!hard!==hd.checked){ hd.checked=!!hard; hd.onchange({target:hd}); }
   if (wk){
+    pendingWalkH = wh;                                          // restore the eye height
     pendingStand = new THREE.Vector3(px,py,pz); setMode('walk');
     camera.position.set(px,py,pz); camera.lookAt(tx,ty,tz);
     look.setFromQuaternion(camera.quaternion); look.z=0;
+    geoH = wh; const gsl=document.getElementById('geoHsl'), gv=document.getElementById('geoHval');
+    if (gsl){ gsl.value=String(wh); gv.textContent = wh.toFixed(1).replace('.', ',') + ' m'; }
+    if (GEO_ON) showGeoHud(true);
   } else {
     setMode('orbit');
     camera.position.set(px,py,pz); orbit.target.set(tx,ty,tz); orbit.update();
@@ -937,6 +1048,120 @@ peg.addEventListener('pointerup',(e)=>{
   const hit = ray.intersectObjects(terrains, true);
   if(hit.length){ pendingStand = hit[0].point.clone(); setMode('walk'); }
 });
+
+// ---- Address lookup: spyglass -> Kartverket geocode -> first-person facing the hall ----
+let _toastT = null;
+function toast(msg){
+  const el = document.getElementById('toast'); el.textContent = msg; el.style.display = 'block';
+  if (_toastT) clearTimeout(_toastT); _toastT = setTimeout(()=>{ el.style.display = 'none'; }, 3000);
+}
+function showGeoHud(on){ document.getElementById('geoHud').style.display = on ? 'block' : 'none'; }
+(function(){                                  // above-ground height HUD slider
+  const sl = document.getElementById('geoHsl'), out = document.getElementById('geoHval');
+  sl.value = String(geoH); out.textContent = geoH.toFixed(1).replace('.', ',') + ' m';
+  sl.addEventListener('input', ()=>{ geoH = +sl.value; out.textContent = geoH.toFixed(1).replace('.', ',') + ' m';
+    if (mode === 'walk'){ walkH = geoH;                       // apply live, even when pointer is unlocked
+      camera.position.y = groundY(camera.position.x, camera.position.z) + walkH; } });
+})();
+window.showGeoHud = showGeoHud;
+
+// live "approximate address" readout while walking — reverse-geocode, throttled hard so the
+// API is hit only when you've moved >20 m from the last lookup AND paused ~0.7 s.
+let addrQueried = new THREE.Vector3(Infinity, 0, Infinity);   // last position reverse-geocoded
+let addrPrev = new THREE.Vector3(); let addrIdle = 0, addrInFlight = false;
+const ADDR_MOVE = 20, ADDR_SETTLE = 0.7;
+async function reverseGeocode(lon, lat){
+  const url = 'https://ws.geonorge.no/adresser/v1/punktsok?lat=' + lat + '&lon=' + lon
+    + '&radius=50&treffPerSide=1&utkoordsys=4326';
+  const r = await fetch(url); if (!r.ok) throw new Error('punktsok ' + r.status);
+  const d = await r.json(); const a = (d.adresser || [])[0];
+  return a ? a.adressetekst + (a.poststed ? ', ' + a.poststed : '') : null;
+}
+function tickAddress(dt){
+  if (!GEO_ON) return;
+  const el = document.getElementById('addrNow');
+  if (mode !== 'walk'){ if (el.style.display !== 'none') el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const cx = camera.position.x, cz = camera.position.z;
+  const frameMove = Math.hypot(cx - addrPrev.x, cz - addrPrev.z); addrPrev.set(cx, 0, cz);
+  addrIdle = frameMove > 0.05 ? 0 : addrIdle + dt;             // reset idle while moving
+  const fromQ = Math.hypot(cx - addrQueried.x, cz - addrQueried.z);
+  if (!addrInFlight && fromQ > ADDR_MOVE && addrIdle > ADDR_SETTLE){
+    addrInFlight = true; addrQueried.set(cx, 0, cz);
+    const [lon, lat] = localToLonLat(cx, cz);
+    reverseGeocode(lon, lat).then(txt=>{ el.textContent = txt ? '≈ ' + txt : ''; })
+      .catch(()=>{}).finally(()=>{ addrInFlight = false; });
+  }
+}
+
+function goToAddress(lon, lat, label){
+  const loc = lonLatToLocal(lon, lat);
+  const stand = nudgeClear(loc.x, loc.z);
+  const gy = terrainHit(stand.x, stand.z);
+  if (gy === null){ toast('Adressen er utenfor området'); return; }
+  stand.y = gy;
+  pendingStand = stand; pendingFace = HALL_C.clone(); pendingWalkH = geoH;
+  showGeoHud(true);
+  setMode('walk');
+  if (label){ const el = document.getElementById('addrNow');   // seed readout, skip a re-query
+    el.textContent = '≈ ' + label; el.style.display = 'block'; addrQueried.set(stand.x, 0, stand.z); }
+  if (heatMetric === 'hours' && todData){     // overlay on → show this spot's soltap
+    const c = todCellAt(stand);
+    lastVals = c ? c.vals : ZERO;
+    pinAt(stand); pinned = true; showPanel(); renderPanel();
+  }
+}
+window.goToAddress = goToAddress;
+
+async function searchAddress(q){
+  if (!q || q.trim().length < 2) return [];
+  const url = 'https://ws.geonorge.no/adresser/v1/sok?sok=' + encodeURIComponent(q.trim())
+    + '&fuzzy=true&kommunenummer=5503&treffPerSide=8&utkoordsys=4326';
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('Adressesøk ' + r.status);
+  const d = await r.json();
+  return (d.adresser || [])
+    .filter(a => a.representasjonspunkt)
+    .map(a => ({ label: a.adressetekst + (a.poststed ? ', ' + a.poststed : ''),
+                 lon: a.representasjonspunkt.lon, lat: a.representasjonspunkt.lat }));
+}
+window.searchAddress = searchAddress;
+
+const GEO_ON = new URLSearchParams(location.search).has('geo');
+if (GEO_ON){
+  const spy = document.getElementById('spyBtn'), box = document.getElementById('addrBox');
+  const input = document.getElementById('addrInput'), list = document.getElementById('addrList');
+  spy.style.display = 'block';
+  let items = [], sel = -1, debT = null, reqSeq = 0;
+
+  const render = ()=>{
+    list.innerHTML = '';
+    if (!items.length){ const e = document.createElement('div'); e.className = 'empty';
+      e.textContent = input.value.trim().length >= 2 ? 'Fant ikke adressen' : ''; list.appendChild(e); return; }
+    items.forEach((it, i)=>{ const d = document.createElement('div');
+      d.className = 'item' + (i === sel ? ' sel' : ''); d.textContent = it.label;
+      d.addEventListener('click', ()=> choose(i)); list.appendChild(d); });
+  };
+  const choose = (i)=>{ const it = items[i]; if (!it) return;
+    box.style.display = 'none'; input.value = it.label; goToAddress(it.lon, it.lat, it.label); };
+  const openBox = (on)=>{ box.style.display = on ? 'block' : 'none'; if (on) input.focus(); };
+  spy.addEventListener('click', ()=> openBox(box.style.display !== 'block'));
+
+  input.addEventListener('input', ()=>{
+    sel = -1; if (debT) clearTimeout(debT);
+    debT = setTimeout(async ()=>{
+      const seq = ++reqSeq;
+      try { const res = await searchAddress(input.value); if (seq === reqSeq){ items = res; render(); } }
+      catch (e){ if (seq === reqSeq){ items = []; render(); } toast('Adressesøk feilet'); }
+    }, 250);
+  });
+  input.addEventListener('keydown', (e)=>{
+    if (e.key === 'ArrowDown'){ sel = Math.min(sel+1, items.length-1); render(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp'){ sel = Math.max(sel-1, 0); render(); e.preventDefault(); }
+    else if (e.key === 'Enter'){ if (sel >= 0) choose(sel); else if (items.length) choose(0); }
+    else if (e.key === 'Escape'){ openBox(false); }
+  });
+}
 
 // ---- "Nå": reset date/time to now, then keep it live (keeps the current view) ----
 const bNow=document.getElementById('bNow'), bSpin=document.getElementById('bSpin');
@@ -1047,12 +1272,15 @@ function animate(){
     if(keys['KeyW']) f+=1; if(keys['KeyS']) f-=1;
     if(keys['KeyA']) r-=1; if(keys['KeyD']) r+=1;
     if(touchWalk){ f += -joyVec.y; r += joyVec.x; }
+    const _p0x = camera.position.x, _p0z = camera.position.z;
     if(f) walk.moveForward(f*sp);
     if(r) walk.moveRight(r*sp);
-    camera.position.y = groundY(camera.position.x, camera.position.z)+eyeH;
+    if(f||r) collideWalls(_p0x, _p0z);          // block movement into building/hall walls
+    camera.position.y = groundY(camera.position.x, camera.position.z)+walkH;
   } else if (mode==='orbit'){ orbit.update(); }
   if (pinMarker.visible) pinMarker.scale.y = 1 + 0.14*Math.sin(clock.elapsedTime*4.5);   // gentle bob → reads as "active pin"
   syncURL(dt);                 // keep the URL in sync so bookmarks/links capture this view
+  tickAddress(dt);             // throttled reverse-geocode of the walk position
   renderer.render(scene, camera);
 }
 animate();
