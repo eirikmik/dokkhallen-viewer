@@ -91,11 +91,23 @@
     transform:translate(13px,13px); background:#0e1116e6; border:1px solid var(--line);
     border-radius:6px; padding:3px 7px; font-size:12px; color:var(--txt); white-space:nowrap;
     font-variant-numeric:tabular-nums; backdrop-filter:blur(3px); }
+  #solHist { position:fixed; left:0; top:0; display:none; pointer-events:none; z-index:41;
+    transform:translate(16px,16px); background:#0e1116f2; border:1px solid var(--line);
+    border-radius:8px; padding:8px 9px 6px; width:184px; color:var(--txt);
+    box-shadow:0 4px 14px #0007; backdrop-filter:blur(4px); }
+  #shTitle { font-size:11px; color:var(--mut); margin-bottom:5px; font-variant-numeric:tabular-nums; }
+  #shTitle b { color:var(--txt); }
+  #shBars { display:flex; align-items:flex-end; gap:2px; height:46px; }
+  #shBars > div { flex:1; display:flex; align-items:flex-end; height:100%; }
+  #shBars > div > i { display:block; width:100%; background:var(--acc); border-radius:1px 1px 0 0; }
+  #shAxis { display:flex; gap:2px; margin-top:3px; }
+  #shAxis > span { flex:1; text-align:center; font-size:8px; color:var(--mut); }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="solTip"></div>
+<div id="solHist"><div id="shTitle"></div><div id="shBars"></div><div id="shAxis"></div></div>
 <div id="load">Laster modell…</div>
 <div id="ui">
   <div id="uiHdr"><h1>Dokkhallen Harstad</h1><span id="uiTog">▾</span></div>
@@ -458,8 +470,9 @@ const heatLayers = {}; let heatCur = null, heatMetric = null;
 function showHeat(metric){
   if (heatCur){ heatCur.visible = false; heatCur = null; }
   heatMetric = metric || null;
+  if (metric === 'hours') loadHist();          // fetch the monthly-histogram side-file
   const leg = document.getElementById('heatLeg');
-  if (!metric){ leg.style.display = 'none'; solTip.style.display = 'none'; return; }
+  if (!metric){ leg.style.display = 'none'; solTip.style.display = 'none'; solHist.style.display = 'none'; return; }
   const apply = (s)=>{ s.visible = true; heatCur = s; leg.style.display = 'block';
     document.getElementById('heatMax').textContent = '≈'+HEAT_VMAX[metric]+' t/år'; };
   if (heatLayers[metric]){ apply(heatLayers[metric]); return; }
@@ -469,22 +482,59 @@ function showHeat(metric){
     heatLayers[metric] = g.scene; scene.add(g.scene); apply(g.scene);
   }, undefined, ()=>{});
 }
-// hover read-out: raycast the visible heat layer and show the exact t/år (stashed in uv.x
-// at bake time, auto-interpolated by three.js) in a tooltip that follows the cursor
-const solTip = document.getElementById('solTip');
+// hover read-out: raycast the visible heat layer. For the hours metric we draw a live monthly
+// histogram (when is the sun lost here); other metrics fall back to a one-line t/år tooltip.
+const solTip = document.getElementById('solTip'), solHist = document.getElementById('solHist');
+const shTitle = document.getElementById('shTitle'), shBars = document.getElementById('shBars'), shAxis = document.getElementById('shAxis');
 const HEAT_LABEL = { hours:'tapte soltimer', midnight:'tapt midnattssol', january:'tapt januarsol' };
+const MON_INI = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+const barFill = [];
+for (let m=0; m<12; m++){
+  const col = document.createElement('div'), fill = document.createElement('i');
+  col.appendChild(fill); shBars.appendChild(col); barFill.push(fill);
+  const lab = document.createElement('span'); lab.textContent = MON_INI[m]; shAxis.appendChild(lab);
+}
+// monthly-histogram side-file (dense Uint16, lazy-loaded with the hours overlay)
+let histData = null, histHdr = null, histLoading = false;
+function loadHist(){
+  if (histData || histLoading) return; histLoading = true;
+  fetch('heat_hist.json').then(r=> r.ok ? r.json() : Promise.reject())
+    .then(h=>{ histHdr = h; return fetch('heat_hist.bin'); })
+    .then(r=> r.arrayBuffer())
+    .then(b=>{ histData = new Uint16Array(b); })
+    .catch(()=>{ histLoading = false; });    // no side-file yet → histogram stays off, tooltip still works
+}
+function hideHover(){ solTip.style.display = 'none'; solHist.style.display = 'none'; }
 renderer.domElement.addEventListener('pointermove', (e)=>{
-  if (!heatCur || walk.isLocked || touchWalk){ solTip.style.display = 'none'; return; }
+  if (!heatCur || walk.isLocked || touchWalk){ hideHover(); return; }
   const r = renderer.domElement.getBoundingClientRect();
   ray.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1), camera);
   const hit = ray.intersectObject(heatCur, true);
-  const v = hit.length && hit[0].uv ? hit[0].uv.x : 0;
-  if (v <= 0.5){ solTip.style.display = 'none'; return; }   // off-mesh or no real loss
+  const h0 = hit.length ? hit[0] : null;
+  const v = h0 && h0.uv ? h0.uv.x : 0;
+  if (v <= 0.5){ hideHover(); return; }          // off-mesh or no real loss
+  // histogram popup for the hours metric, once the side-file has loaded
+  if (heatMetric === 'hours' && histData && histHdr && h0.point){
+    const H = histHdr, E = h0.point.x, N = -h0.point.z;
+    const i = Math.round((E-H.HCX)/H.ostep) + H.gn, j = Math.round((N-H.HCY)/H.ostep) + H.gn;
+    if (i>=0 && i<H.gw && j>=0 && j<H.gw){
+      const base = (j*H.gw + i)*H.nbins; const vals = []; let mx=0, tot=0, pk=0;
+      for (let m=0; m<H.nbins; m++){ const x = histData[base+m]/H.scale; vals.push(x); tot+=x; if(x>mx){ mx=x; pk=m; } }
+      const denom = mx>0 ? mx : 1;
+      for (let m=0; m<H.nbins; m++){ barFill[m].style.height = (100*vals[m]/denom).toFixed(1)+'%'; barFill[m].style.opacity = m===pk ? 1 : 0.66; }
+      shTitle.innerHTML = '<b>'+Math.round(tot)+' t/år</b> tapt · mest i '+H.months[pk];
+      solTip.style.display = 'none';
+      solHist.style.left = e.clientX+'px'; solHist.style.top = e.clientY+'px'; solHist.style.display = 'block';
+      return;
+    }
+  }
+  // fallback one-liner (other metrics, or histogram not loaded / outside its grid)
+  solHist.style.display = 'none';
   solTip.textContent = (v < 1 ? '<1' : Math.round(v)) + ' t/år · ' + (HEAT_LABEL[heatMetric] || '');
   solTip.style.left = e.clientX + 'px'; solTip.style.top = e.clientY + 'px';
   solTip.style.display = 'block';
 });
-renderer.domElement.addEventListener('pointerleave', ()=>{ solTip.style.display = 'none'; });
+renderer.domElement.addEventListener('pointerleave', hideHover);
 
 // ---- sun update from UI ----
 const dayEl=document.getElementById('day'), hourEl=document.getElementById('hour');
