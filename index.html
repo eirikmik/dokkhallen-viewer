@@ -155,7 +155,7 @@
     <input id="toggle" type="checkbox" checked style="accent-color:var(--acc);width:15px;height:15px"/> Vis dokkhall</label>
   <label style="display:flex;align-items:center;gap:8px;margin:4px 0 2px;cursor:pointer;color:var(--txt);font-size:12px">
     <input id="hard" type="checkbox" style="accent-color:var(--acc);width:15px;height:15px"/> Harde skygger</label>
-  <div id="heatBox" style="display:none;margin:6px 0 2px">
+  <div id="heatBox" style="margin:6px 0 2px">
     <label style="display:flex;align-items:center;gap:8px;color:var(--mut);font-size:12px">Soltap-kart
       <select id="heatSel" style="flex:1;background:#0e1116;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:3px 6px;font-size:12px">
         <option value="">Av</option>
@@ -848,9 +848,7 @@ addEventListener('pointerup', e=>{ if(e.pointerId===lookId) lookId=null; });
 // ---- proposed Dokkhallen on/off ----
 document.getElementById('toggle').onchange = (e)=>{ if(proposal) proposal.visible = e.target.checked; };
 document.getElementById('heatSel').onchange = (e)=> showHeat(e.target.value);
-// feature flag: heat-map controls are hidden unless ?heat is present in the URL
-if (new URLSearchParams(location.search).has('heat'))
-  document.getElementById('heatBox').style.display = 'block';
+// soltap (sun-loss) controls are a standard part of the viewer now
 document.getElementById('hard').onchange = (e)=>{
   window._hardShadows = e.target.checked;
   const S = window._hardShadows ? 450 : 1400;    // tight+crisp for detail, wide for impact study
