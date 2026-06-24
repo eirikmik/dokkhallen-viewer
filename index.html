@@ -87,10 +87,15 @@
   #settings .srow > label b { color:var(--txt); font-variant-numeric:tabular-nums; }
   #settings .srow input[type=checkbox] { accent-color:var(--acc); width:15px; height:15px; }
   @media (max-width:640px) { #settings { width:calc(100vw - 24px); max-width:300px; } }
+  #solTip { position:fixed; left:0; top:0; display:none; pointer-events:none; z-index:40;
+    transform:translate(13px,13px); background:#0e1116e6; border:1px solid var(--line);
+    border-radius:6px; padding:3px 7px; font-size:12px; color:var(--txt); white-space:nowrap;
+    font-variant-numeric:tabular-nums; backdrop-filter:blur(3px); }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<div id="solTip"></div>
 <div id="load">Laster modell…</div>
 <div id="ui">
   <div id="uiHdr"><h1>Dokkhallen Harstad</h1><span id="uiTog">▾</span></div>
@@ -119,6 +124,19 @@
     <input id="toggle" type="checkbox" checked style="accent-color:var(--acc);width:15px;height:15px"/> Vis dokkhall</label>
   <label style="display:flex;align-items:center;gap:8px;margin:4px 0 2px;cursor:pointer;color:var(--txt);font-size:12px">
     <input id="hard" type="checkbox" style="accent-color:var(--acc);width:15px;height:15px"/> Harde skygger</label>
+  <div id="heatBox" style="display:none;margin:6px 0 2px">
+    <label style="display:flex;align-items:center;gap:8px;color:var(--mut);font-size:12px">Soltap-kart
+      <select id="heatSel" style="flex:1;background:#0e1116;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:3px 6px;font-size:12px">
+        <option value="">Av</option>
+        <option value="hours">Tapte soltimer/år</option>
+        <option value="midnight">Midnattssol (mot sør)</option>
+        <option value="january">Januar – solas retur (mot nord)</option>
+      </select></label>
+    <div id="heatLeg" style="display:none;margin:6px 0 2px;font-size:10px;color:var(--mut)">
+      <div style="height:9px;border-radius:3px;background:linear-gradient(90deg,#000003,#420a68,#932667,#dd513a,#fca50a,#fcffa4)"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:2px"><span>lite tap</span><span id="heatMax">≈145 t/år</span></div>
+    </div>
+  </div>
   <div class="btns">
     <button id="bOrbit" class="on">Oversikt</button>
     <button id="bSpin">⟳ Roter</button>
@@ -434,6 +452,39 @@ gltfLoader.load('city_colored.glb', (g)=>{
   g.scene.traverse(o=>{ if(o.isMesh){ o.material = fm; o.castShadow = true; o.receiveShadow = true; } });
   scene.add(g.scene);
 }, undefined, ()=>{});
+// sun-loss heat overlays (net hours/yr lost to the hall) — draped on terrain, unlit, lazy-loaded
+const HEAT_VMAX = { hours:186, midnight:25, january:4 };   // 97th-pct maxima from the GPU bake (horizon)
+const heatLayers = {}; let heatCur = null, heatMetric = null;
+function showHeat(metric){
+  if (heatCur){ heatCur.visible = false; heatCur = null; }
+  heatMetric = metric || null;
+  const leg = document.getElementById('heatLeg');
+  if (!metric){ leg.style.display = 'none'; solTip.style.display = 'none'; return; }
+  const apply = (s)=>{ s.visible = true; heatCur = s; leg.style.display = 'block';
+    document.getElementById('heatMax').textContent = '≈'+HEAT_VMAX[metric]+' t/år'; };
+  if (heatLayers[metric]){ apply(heatLayers[metric]); return; }
+  gltfLoader.load('heat_overlay_'+metric+'.glb', (g)=>{
+    const om = new THREE.MeshBasicMaterial({ vertexColors:true, transparent:true, depthWrite:false });
+    g.scene.traverse(o=>{ if(o.isMesh){ o.material = om; o.renderOrder = 6; o.castShadow=false; o.receiveShadow=false; } });
+    heatLayers[metric] = g.scene; scene.add(g.scene); apply(g.scene);
+  }, undefined, ()=>{});
+}
+// hover read-out: raycast the visible heat layer and show the exact t/år (stashed in uv.x
+// at bake time, auto-interpolated by three.js) in a tooltip that follows the cursor
+const solTip = document.getElementById('solTip');
+const HEAT_LABEL = { hours:'tapte soltimer', midnight:'tapt midnattssol', january:'tapt januarsol' };
+renderer.domElement.addEventListener('pointermove', (e)=>{
+  if (!heatCur || walk.isLocked || touchWalk){ solTip.style.display = 'none'; return; }
+  const r = renderer.domElement.getBoundingClientRect();
+  ray.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1), camera);
+  const hit = ray.intersectObject(heatCur, true);
+  const v = hit.length && hit[0].uv ? hit[0].uv.x : 0;
+  if (v <= 0.5){ solTip.style.display = 'none'; return; }   // off-mesh or no real loss
+  solTip.textContent = (v < 1 ? '<1' : Math.round(v)) + ' t/år · ' + (HEAT_LABEL[heatMetric] || '');
+  solTip.style.left = e.clientX + 'px'; solTip.style.top = e.clientY + 'px';
+  solTip.style.display = 'block';
+});
+renderer.domElement.addEventListener('pointerleave', ()=>{ solTip.style.display = 'none'; });
 
 // ---- sun update from UI ----
 const dayEl=document.getElementById('day'), hourEl=document.getElementById('hour');
@@ -566,6 +617,10 @@ addEventListener('pointerup', e=>{ if(e.pointerId===lookId) lookId=null; });
 
 // ---- proposed Dokkhallen on/off ----
 document.getElementById('toggle').onchange = (e)=>{ if(proposal) proposal.visible = e.target.checked; };
+document.getElementById('heatSel').onchange = (e)=> showHeat(e.target.value);
+// feature flag: heat-map controls are hidden unless ?heat is present in the URL
+if (new URLSearchParams(location.search).has('heat'))
+  document.getElementById('heatBox').style.display = 'block';
 document.getElementById('hard').onchange = (e)=>{
   window._hardShadows = e.target.checked;
   const S = window._hardShadows ? 450 : 1400;    // tight+crisp for detail, wide for impact study
