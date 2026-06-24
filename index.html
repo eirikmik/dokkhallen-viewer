@@ -586,8 +586,10 @@ function renderCarpet(vals){
   spLeg.appendChild(svgEl('rect',{x:X0, y:4, width:barW, height:8, rx:2, fill:'url(#spig)'}));
   spLeg.appendChild(svgEl('text',{x:X0, y:24,'class':'sx'})).textContent = '0';
   spLeg.appendChild(svgEl('text',{x:X0+barW, y:24,'text-anchor':'end','class':'sx'})).textContent = '≈'+Math.round(max)+' t';
-  spSum.innerHTML = `<b>${Math.round(tot)} t/år</b> tapt · mest i <b>${MONF[pm]}</b> rundt <b>kl ${String(ph).padStart(2,'0')}</b>`;
-  spRead.textContent = 'Pek på en rute for å lese av timer';
+  spSum.innerHTML = tot > 0.5
+    ? `<b>${Math.round(tot)} t/år</b> tapt · mest i <b>${MONF[pm]}</b> rundt <b>kl ${String(ph).padStart(2,'0')}</b>`
+    : 'Ingen registrert soltap her';
+  spRead.textContent = tot > 0.5 ? 'Pek på en rute for å lese av timer' : '';
 }
 
 function renderSun(vals){
@@ -631,7 +633,9 @@ function renderSun(vals){
   spView.appendChild(svgEl('text',{x:X0+W, y:Y0+8,'text-anchor':'end',fill:'#ffd479','font-size':'8'})).textContent = '— 21. jun';
   spView.appendChild(svgEl('text',{x:X0+W, y:Y0+18,'text-anchor':'end',fill:'#5aa9ff','font-size':'8'})).textContent = '— 21. des';
   let tot=0; for (let k=0;k<288;k++) tot+=vals[k];
-  spSum.innerHTML = `Skravert = <b>hallen blokkerer sol</b> · ≈ <b>${Math.round(tot)} t/år</b> tapt`;
+  spSum.innerHTML = tot > 0.5
+    ? `Skravert = <b>hallen blokkerer sol</b> · ≈ <b>${Math.round(tot)} t/år</b> tapt`
+    : 'Ingen registrert soltap her';
 }
 
 // tab + close wiring
@@ -689,26 +693,29 @@ function rayHit(e){
   const hit = ray.intersectObject(heatCur, true); return hit.length ? hit[0] : null;
 }
 let lastKey = -1;
+const ZERO = new Float32Array(288);                    // empty cell shown when outside the affected zone
 function hideCursor(){ solTip.style.display='none'; solHist.style.display='none'; lastKey = -1; }
 renderer.domElement.addEventListener('pointermove', (e)=>{
   if (!heatCur || walk.isLocked || touchWalk){ hideCursor(); return; }
   const h0 = rayHit(e);
   const v = h0 && h0.uv ? h0.uv.x : 0;
-  if (v <= 0.5){ hideCursor(); return; }              // off-mesh or no real loss
-  // hours: cursor-following monthly histogram; docked panel live-updates unless pinned
-  if (heatMetric === 'hours'){
-    const c = todCellAt(h0 && h0.point);
-    if (c){
-      if (c.key !== lastKey){                          // only redraw content when the cell changes
-        renderMiniHist(c.vals);
-        if (!pinned){ lastVals = c.vals; showPanel(); renderPanel(); }
-        lastKey = c.key;
-      }
-      solTip.style.display='none';
-      solHist.style.left = e.clientX+'px'; solHist.style.top = e.clientY+'px'; solHist.style.display='block';
-      return; }
+  // hours with data: cursor histogram over loss cells; docked panel live (zeros outside the zone)
+  if (heatMetric === 'hours' && todData){
+    const c = todCellAt(h0 && h0.point);              // loss cell, or null outside the affected zone
+    const key = c ? c.key : -1;
+    if (key !== lastKey){                             // redraw only when the cell changes
+      const vals = c ? c.vals : ZERO;
+      if (c) renderMiniHist(vals);
+      if (!pinned){ lastVals = vals; showPanel(); renderPanel(); }   // outside zone → zeros, not stale edge value
+      lastKey = key;
+    }
+    if (c){ solTip.style.display='none';
+      solHist.style.left = e.clientX+'px'; solHist.style.top = e.clientY+'px'; solHist.style.display='block'; }
+    else solHist.style.display='none';
+    return;
   }
   // other metrics (or hours before the side-file loads): one-line total
+  if (v <= 0.5){ hideCursor(); return; }
   solHist.style.display='none';
   solTip.textContent = (v < 1 ? '<1' : Math.round(v)) + ' t/år · ' + (HEAT_LABEL[heatMetric] || '');
   solTip.style.left = e.clientX+'px'; solTip.style.top = e.clientY+'px'; solTip.style.display = 'block';
