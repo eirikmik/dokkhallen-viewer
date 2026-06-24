@@ -547,9 +547,9 @@ function todCellAt(pt){
   if (!todData || !todHdr || !pt) return null;
   const H = todHdr, i = Math.round((pt.x-H.HCX)/H.ostep)+H.gn, j = Math.round((-pt.z-H.HCY)/H.ostep)+H.gn;
   if (i<0 || i>=H.gw || j<0 || j>=H.gw) return null;
-  const off = todRow.get(j*H.gw + i); if (off === undefined) return null;
+  const key = j*H.gw + i, off = todRow.get(key); if (off === undefined) return null;
   const v = new Float32Array(288); for (let m=0; m<288; m++) v[m] = todData[off+m]/H.scale;
-  return v;
+  return { key, vals: v };
 }
 
 // ---- docked panel: carpet (Teppe) + sun-path (Solbane), both from the 288-value cell ----
@@ -632,7 +632,8 @@ function rayHit(e){
   ray.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1), camera);
   const hit = ray.intersectObject(heatCur, true); return hit.length ? hit[0] : null;
 }
-function hideCursor(){ solTip.style.display='none'; solHist.style.display='none'; }
+let lastKey = -1;
+function hideCursor(){ solTip.style.display='none'; solHist.style.display='none'; lastKey = -1; }
 renderer.domElement.addEventListener('pointermove', (e)=>{
   if (!heatCur || walk.isLocked || touchWalk){ hideCursor(); return; }
   const h0 = rayHit(e);
@@ -641,9 +642,14 @@ renderer.domElement.addEventListener('pointermove', (e)=>{
   // hours: cursor-following monthly histogram; docked panel live-updates unless pinned
   if (heatMetric === 'hours'){
     const c = todCellAt(h0 && h0.point);
-    if (c){ renderMiniHist(c); solTip.style.display='none';
+    if (c){
+      if (c.key !== lastKey){                          // only redraw content when the cell changes
+        renderMiniHist(c.vals);
+        if (!pinned){ lastVals = c.vals; showPanel(); renderPanel(); }
+        lastKey = c.key;
+      }
+      solTip.style.display='none';
       solHist.style.left = e.clientX+'px'; solHist.style.top = e.clientY+'px'; solHist.style.display='block';
-      if (!pinned){ lastVals = c; showPanel(); renderPanel(); }
       return; }
   }
   // other metrics (or hours before the side-file loads): one-line total
@@ -659,8 +665,8 @@ renderer.domElement.addEventListener('click', (e)=>{
   if (pinned && pt){ const dx = pt.x-pinMarker.position.x, dz = pt.z-pinMarker.position.z;
     if (Math.hypot(dx,dz) < (todHdr ? todHdr.ostep*1.5 : 6)){ unpin(); return; } }
   const c = pt ? todCellAt(pt) : null;
-  if (c){ lastVals = c; pinAt(pt); pinned = true; showPanel(); renderPanel(); }  // pin & lock here
-  else { unpin(); }                                                              // clicked empty → back to live
+  if (c){ lastVals = c.vals; pinAt(pt); pinned = true; showPanel(); renderPanel(); }  // pin & lock here
+  else { unpin(); }                                                                   // clicked empty → back to live
 });
 addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && pinned){ unpin(); } });
 
