@@ -91,23 +91,29 @@
     transform:translate(13px,13px); background:#0e1116e6; border:1px solid var(--line);
     border-radius:6px; padding:3px 7px; font-size:12px; color:var(--txt); white-space:nowrap;
     font-variant-numeric:tabular-nums; backdrop-filter:blur(3px); }
-  #solHist { position:fixed; left:0; top:0; display:none; pointer-events:none; z-index:41;
-    transform:translate(16px,16px); background:#0e1116f2; border:1px solid var(--line);
-    border-radius:8px; padding:8px 9px 6px; width:184px; color:var(--txt);
-    box-shadow:0 4px 14px #0007; backdrop-filter:blur(4px); }
-  #shTitle { font-size:11px; color:var(--mut); margin-bottom:5px; font-variant-numeric:tabular-nums; }
-  #shTitle b { color:var(--txt); }
-  #shBars { display:flex; align-items:flex-end; gap:2px; height:46px; }
-  #shBars > div { flex:1; display:flex; align-items:flex-end; height:100%; }
-  #shBars > div > i { display:block; width:100%; background:var(--acc); border-radius:1px 1px 0 0; }
-  #shAxis { display:flex; gap:2px; margin-top:3px; }
-  #shAxis > span { flex:1; text-align:center; font-size:8px; color:var(--mut); }
+  #solPanel { position:fixed; left:14px; bottom:14px; width:300px; display:none; z-index:42;
+    background:#0e1116f2; border:1px solid var(--line); border-radius:10px; padding:10px 12px;
+    box-shadow:0 6px 20px #0008; backdrop-filter:blur(5px); color:var(--txt); }
+  #spHead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:12px; }
+  #spTabs b { color:var(--mut); cursor:pointer; margin-right:12px; font-weight:600; }
+  #spTabs b.on { color:var(--acc); }
+  #spClose { color:var(--mut); cursor:pointer; font-size:13px; }
+  #spView text.sx, #spLeg text.sx { fill:var(--mut); font-size:9px; }
+  #spRead { min-height:16px; font-size:12px; margin-top:6px; color:var(--txt); font-variant-numeric:tabular-nums; }
+  #spSum { font-size:11.5px; color:var(--mut); margin-top:4px; font-variant-numeric:tabular-nums; }
+  @media (pointer:coarse){ #solPanel { left:0; right:0; bottom:0; width:auto; border-radius:12px 12px 0 0; } }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="solTip"></div>
-<div id="solHist"><div id="shTitle"></div><div id="shBars"></div><div id="shAxis"></div></div>
+<div id="solPanel">
+  <div id="spHead"><span id="spTabs"><b data-tab="carpet" class="on">Teppe</b><b data-tab="sun">Solbane</b></span><span id="spClose">✕</span></div>
+  <svg id="spView" width="276" height="280"></svg>
+  <svg id="spLeg" width="276" height="28"></svg>
+  <div id="spRead"></div>
+  <div id="spSum"></div>
+</div>
 <div id="load">Laster modell…</div>
 <div id="ui">
   <div id="uiHdr"><h1>Dokkhallen Harstad</h1><span id="uiTog">▾</span></div>
@@ -470,9 +476,10 @@ const heatLayers = {}; let heatCur = null, heatMetric = null;
 function showHeat(metric){
   if (heatCur){ heatCur.visible = false; heatCur = null; }
   heatMetric = metric || null;
-  if (metric === 'hours') loadHist();          // fetch the monthly-histogram side-file
+  if (metric === 'hours') loadTod();           // fetch the month×hour side-file
+  else { unpin(); solPanel.style.display = 'none'; }
   const leg = document.getElementById('heatLeg');
-  if (!metric){ leg.style.display = 'none'; solTip.style.display = 'none'; solHist.style.display = 'none'; return; }
+  if (!metric){ leg.style.display = 'none'; solTip.style.display = 'none'; unpin(); solPanel.style.display = 'none'; return; }
   const apply = (s)=>{ s.visible = true; heatCur = s; leg.style.display = 'block';
     document.getElementById('heatMax').textContent = '≈'+HEAT_VMAX[metric]+' t/år'; };
   if (heatLayers[metric]){ apply(heatLayers[metric]); return; }
@@ -482,59 +489,142 @@ function showHeat(metric){
     heatLayers[metric] = g.scene; scene.add(g.scene); apply(g.scene);
   }, undefined, ()=>{});
 }
-// hover read-out: raycast the visible heat layer. For the hours metric we draw a live monthly
-// histogram (when is the sun lost here); other metrics fall back to a one-line t/år tooltip.
-const solTip = document.getElementById('solTip'), solHist = document.getElementById('solHist');
-const shTitle = document.getElementById('shTitle'), shBars = document.getElementById('shBars'), shAxis = document.getElementById('shAxis');
+// hover read-out: cursor tooltip shows the total t/år; a docked panel shows WHEN the loss
+// happens (month×hour carpet / sun-path) for the hovered or pinned point.
+const solTip = document.getElementById('solTip'), solPanel = document.getElementById('solPanel');
+const spView = document.getElementById('spView'), spLeg = document.getElementById('spLeg');
+const spRead = document.getElementById('spRead'), spSum = document.getElementById('spSum');
 const HEAT_LABEL = { hours:'tapte soltimer', midnight:'tapt midnattssol', january:'tapt januarsol' };
-const MON_INI = ['J','F','M','A','M','J','J','A','S','O','N','D'];
-const barFill = [];
-for (let m=0; m<12; m++){
-  const col = document.createElement('div'), fill = document.createElement('i');
-  col.appendChild(fill); shBars.appendChild(col); barFill.push(fill);
-  const lab = document.createElement('span'); lab.textContent = MON_INI[m]; shAxis.appendChild(lab);
+const MONF = ['jan','feb','mar','apr','mai','jun','jul','aug','sep','okt','nov','des'];
+const NS = 'http://www.w3.org/2000/svg';
+function svgEl(tag, at){ const e = document.createElementNS(NS, tag); for (const k in at) e.setAttribute(k, at[k]); return e; }
+const ILUT = [[0.001,0.000,0.014],[0.087,0.044,0.224],[0.258,0.039,0.406],[0.416,0.090,0.433],
+  [0.578,0.148,0.404],[0.735,0.215,0.330],[0.866,0.317,0.226],[0.954,0.438,0.122],
+  [0.987,0.600,0.039],[0.964,0.784,0.155],[0.988,0.998,0.645]];
+function inferno(t){ t = Math.max(0,Math.min(1,t))*(ILUT.length-1); const i = Math.floor(t), f = t-i;
+  const a = ILUT[i], b = ILUT[Math.min(i+1,ILUT.length-1)]; const c = k=>Math.round(255*(a[k]+(b[k]-a[k])*f));
+  return `rgb(${c(0)},${c(1)},${c(2)})`; }
+
+// month×hour side-file (sparse: only loss cells), lazy-loaded with the hours overlay
+let todData = null, todHdr = null, todRow = null, todLoading = false;
+function loadTod(){
+  if (todData || todLoading) return; todLoading = true;
+  fetch('heat_tod.json').then(r=> r.ok ? r.json() : Promise.reject())
+    .then(h=>{ todHdr = h; return Promise.all([fetch('heat_tod.bin').then(r=>r.arrayBuffer()),
+                                               fetch('heat_tod_idx.bin').then(r=>r.arrayBuffer())]); })
+    .then(([b,ix])=>{ todData = new Uint16Array(b); const idx = new Uint32Array(ix);
+      todRow = new Map(); for (let k=0; k<idx.length; k++) todRow.set(idx[k], k*288); })
+    .catch(()=>{ todLoading = false; });     // no side-file yet → panel stays off, tooltip still works
 }
-// monthly-histogram side-file (dense Uint16, lazy-loaded with the hours overlay)
-let histData = null, histHdr = null, histLoading = false;
-function loadHist(){
-  if (histData || histLoading) return; histLoading = true;
-  fetch('heat_hist.json').then(r=> r.ok ? r.json() : Promise.reject())
-    .then(h=>{ histHdr = h; return fetch('heat_hist.bin'); })
-    .then(r=> r.arrayBuffer())
-    .then(b=>{ histData = new Uint16Array(b); })
-    .catch(()=>{ histLoading = false; });    // no side-file yet → histogram stays off, tooltip still works
+function todCellAt(pt){
+  if (!todData || !todHdr || !pt) return null;
+  const H = todHdr, i = Math.round((pt.x-H.HCX)/H.ostep)+H.gn, j = Math.round((-pt.z-H.HCY)/H.ostep)+H.gn;
+  if (i<0 || i>=H.gw || j<0 || j>=H.gw) return null;
+  const off = todRow.get(j*H.gw + i); if (off === undefined) return null;
+  const v = new Float32Array(288); for (let m=0; m<288; m++) v[m] = todData[off+m]/H.scale;
+  return v;
 }
-function hideHover(){ solTip.style.display = 'none'; solHist.style.display = 'none'; }
-renderer.domElement.addEventListener('pointermove', (e)=>{
-  if (!heatCur || walk.isLocked || touchWalk){ hideHover(); return; }
+
+// ---- docked panel: carpet (Teppe) + sun-path (Solbane), both from the 288-value cell ----
+let panelFrozen = false, curTab = 'carpet', lastVals = null;
+function showPanel(){ solPanel.style.display = 'block'; }
+function renderPanel(){ if (!lastVals) return; (curTab === 'carpet' ? renderCarpet : renderSun)(lastVals); }
+
+function renderCarpet(vals){
+  spView.innerHTML = ''; spLeg.style.display = 'block';
+  const X0=30, Y0=8, cw=20, ch=10; let max=0, tot=0, pm=0, ph=0, pk=0;
+  for (let m=0; m<12; m++) for (let h=0; h<24; h++){ const x=vals[m*24+h]; tot+=x;
+    if (x>max) max=x; if (x>pk){ pk=x; pm=m; ph=h; } }
+  let hl = null;
+  for (let h=0; h<24; h++) for (let m=0; m<12; m++){
+    const x = vals[m*24+h];
+    const r = svgEl('rect',{x:X0+m*cw, y:Y0+h*ch, width:cw-1, height:ch-1, rx:1,
+      fill: x<=0.05 ? '#161b22' : inferno(x/(max||1))});
+    r.addEventListener('pointermove',(ev)=>{ ev.stopPropagation();
+      if (hl) hl.setAttribute('stroke','none'); hl=r; r.setAttribute('stroke','#fff'); r.setAttribute('stroke-width','1.2');
+      spRead.innerHTML = `<b>${MONF[m]}, kl ${String(h).padStart(2,'0')}:00</b> — ${x<0.5?'<1':Math.round(x)} t tapt`; });
+    spView.appendChild(r);
+  }
+  for (let h=0; h<=24; h+=4) spView.appendChild(svgEl('text',{x:X0-5, y:Y0+h*ch+3, 'text-anchor':'end','class':'sx'})).textContent = String(h).padStart(2,'0');
+  for (let m=0; m<12; m++) spView.appendChild(svgEl('text',{x:X0+m*cw+cw/2-0.5, y:Y0+24*ch+11, 'text-anchor':'middle','class':'sx'})).textContent = MONF[m][0].toUpperCase();
+  // colour bar
+  spLeg.innerHTML = '';
+  const defs = svgEl('defs'), lg = svgEl('linearGradient',{id:'spig',x1:'0',y1:'0',x2:'1',y2:'0'});
+  ILUT.forEach((c,k)=> lg.appendChild(svgEl('stop',{offset:(k/(ILUT.length-1)*100)+'%',
+    'stop-color':`rgb(${Math.round(c[0]*255)},${Math.round(c[1]*255)},${Math.round(c[2]*255)})`})));
+  defs.appendChild(lg); spLeg.appendChild(defs);
+  spLeg.appendChild(svgEl('rect',{x:X0, y:4, width:230, height:8, rx:2, fill:'url(#spig)'}));
+  spLeg.appendChild(svgEl('text',{x:X0, y:24,'class':'sx'})).textContent = '0';
+  spLeg.appendChild(svgEl('text',{x:X0+230, y:24,'text-anchor':'end','class':'sx'})).textContent = '≈'+Math.round(max)+' t';
+  spSum.innerHTML = `<b>${Math.round(tot)} t/år</b> tapt · mest i <b>${MONF[pm]}</b> rundt <b>kl ${String(ph).padStart(2,'0')}</b>`;
+  spRead.textContent = 'Pek på en rute for å lese av timer';
+}
+
+function renderSun(vals){
+  spView.innerHTML = ''; spLeg.style.display = 'none'; spRead.textContent = '';
+  const X0=26, Y0=8, W=232, H=176, elMax=46;
+  const px = az=> X0 + (az/360)*W, py = e=> Y0 + (1-(e+4)/(elMax+4))*H;
+  spView.appendChild(svgEl('line',{x1:X0,y1:py(0),x2:X0+W,y2:py(0),stroke:'#39424f','stroke-dasharray':'3 3'}));
+  for (const [a,lab] of [[0,'N'],[90,'Ø'],[180,'S'],[270,'V'],[360,'N']]){
+    spView.appendChild(svgEl('line',{x1:px(a),y1:Y0,x2:px(a),y2:Y0+H,stroke:'#1b222c'}));
+    spView.appendChild(svgEl('text',{x:px(a),y:Y0+H+12,'text-anchor':'middle','class':'sx'})).textContent = lab;
+  }
+  for (let e=0; e<=40; e+=20) spView.appendChild(svgEl('text',{x:X0-4,y:py(e)+3,'text-anchor':'end','class':'sx'})).textContent = e+'°';
+  // monthly day-arcs (21st), client-side
+  for (let m=0; m<12; m++){ let d='', started=false;
+    for (let hl=0; hl<=24; hl+=0.2){ const {az,el} = sunAzEl(2026, m+1, 21, hl);
+      if (el<-3){ started=false; continue; }
+      d += (started?'L':'M')+px(az).toFixed(1)+' '+py(el).toFixed(1)+' '; started=true; }
+    const emph = (m===5||m===11||m===2||m===8);
+    if (d) spView.appendChild(svgEl('path',{d, fill:'none',
+      stroke: m===5?'#ffd479':(m===11?'#5aa9ff':'#7f8da0'), 'stroke-width': emph?1.4:0.7,
+      'stroke-opacity': emph?0.9:0.4})); }
+  // lost (month,hour) cells reprojected onto az/el
+  let max=0; for (let k=0;k<288;k++) if (vals[k]>max) max=vals[k];
+  for (let m=0; m<12; m++) for (let h=0; h<24; h++){ const x = vals[m*24+h]; if (x<=0.5) continue;
+    const {az,el} = sunAzEl(2026, m+1, 15, h+0.5); if (el< -3) continue;
+    spView.appendChild(svgEl('circle',{cx:px(az),cy:py(el),r:2.6,fill:inferno(x/(max||1)),'fill-opacity':0.95})); }
+  let tot=0; for (let k=0;k<288;k++) tot+=vals[k];
+  spSum.innerHTML = `Tapt sol vist som <b>solposisjon</b> · ≈ <b>${Math.round(tot)} t/år</b>`;
+}
+
+// tab + close wiring
+solPanel.querySelectorAll('#spTabs b').forEach(b=> b.addEventListener('click',()=>{
+  curTab = b.dataset.tab; solPanel.querySelectorAll('#spTabs b').forEach(x=> x.classList.toggle('on', x===b)); renderPanel(); }));
+document.getElementById('spClose').addEventListener('click',()=>{ unpin(); solPanel.style.display='none'; });
+
+// pin marker on the terrain
+const pinMarker = new THREE.Mesh(new THREE.RingGeometry(2.2, 3.2, 32).rotateX(-Math.PI/2),
+  new THREE.MeshBasicMaterial({ color:0x5aa9ff, transparent:true, opacity:0.9, depthWrite:false }));
+pinMarker.renderOrder = 7; pinMarker.visible = false; scene.add(pinMarker);
+function pinAt(pt){ pinMarker.position.set(pt.x, pt.y+0.5, pt.z); pinMarker.visible = true; }
+function unpin(){ pinMarker.visible = false; panelFrozen = false; }
+
+function rayHit(e){
   const r = renderer.domElement.getBoundingClientRect();
   ray.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1), camera);
-  const hit = ray.intersectObject(heatCur, true);
-  const h0 = hit.length ? hit[0] : null;
+  const hit = ray.intersectObject(heatCur, true); return hit.length ? hit[0] : null;
+}
+renderer.domElement.addEventListener('pointermove', (e)=>{
+  if (!heatCur || walk.isLocked || touchWalk){ solTip.style.display='none'; return; }
+  const h0 = rayHit(e);
   const v = h0 && h0.uv ? h0.uv.x : 0;
-  if (v <= 0.5){ hideHover(); return; }          // off-mesh or no real loss
-  // histogram popup for the hours metric, once the side-file has loaded
-  if (heatMetric === 'hours' && histData && histHdr && h0.point){
-    const H = histHdr, E = h0.point.x, N = -h0.point.z;
-    const i = Math.round((E-H.HCX)/H.ostep) + H.gn, j = Math.round((N-H.HCY)/H.ostep) + H.gn;
-    if (i>=0 && i<H.gw && j>=0 && j<H.gw){
-      const base = (j*H.gw + i)*H.nbins; const vals = []; let mx=0, tot=0, pk=0;
-      for (let m=0; m<H.nbins; m++){ const x = histData[base+m]/H.scale; vals.push(x); tot+=x; if(x>mx){ mx=x; pk=m; } }
-      const denom = mx>0 ? mx : 1;
-      for (let m=0; m<H.nbins; m++){ barFill[m].style.height = (100*vals[m]/denom).toFixed(1)+'%'; barFill[m].style.opacity = m===pk ? 1 : 0.66; }
-      shTitle.innerHTML = '<b>'+Math.round(tot)+' t/år</b> tapt · mest i '+H.months[pk];
-      solTip.style.display = 'none';
-      solHist.style.left = e.clientX+'px'; solHist.style.top = e.clientY+'px'; solHist.style.display = 'block';
-      return;
-    }
-  }
-  // fallback one-liner (other metrics, or histogram not loaded / outside its grid)
-  solHist.style.display = 'none';
+  if (v <= 0.5){ solTip.style.display='none'; return; }
   solTip.textContent = (v < 1 ? '<1' : Math.round(v)) + ' t/år · ' + (HEAT_LABEL[heatMetric] || '');
-  solTip.style.left = e.clientX + 'px'; solTip.style.top = e.clientY + 'px';
-  solTip.style.display = 'block';
+  solTip.style.left = e.clientX+'px'; solTip.style.top = e.clientY+'px'; solTip.style.display = 'block';
+  if (heatMetric === 'hours' && !panelFrozen){
+    const c = todCellAt(h0 && h0.point);
+    if (c){ lastVals = c; showPanel(); renderPanel(); }
+  }
 });
-renderer.domElement.addEventListener('pointerleave', hideHover);
+renderer.domElement.addEventListener('pointerleave', ()=>{ solTip.style.display='none'; });
+renderer.domElement.addEventListener('click', (e)=>{
+  if (heatMetric !== 'hours' || walk.isLocked) return;
+  const h0 = rayHit(e); const c = h0 && h0.point ? todCellAt(h0.point) : null;
+  if (c){ lastVals = c; pinAt(h0.point); panelFrozen = true; showPanel(); renderPanel(); }
+  else { unpin(); solPanel.style.display = 'none'; }
+});
+addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && pinMarker.visible){ unpin(); } });
 
 // ---- sun update from UI ----
 const dayEl=document.getElementById('day'), hourEl=document.getElementById('hour');
